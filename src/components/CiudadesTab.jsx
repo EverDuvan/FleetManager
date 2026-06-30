@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { DataTable } from './ui/DataTable';
 import { SidePanel } from './ui/SidePanel';
 import { Dialog } from './ui/Dialog';
+import { ExportButtons } from './ui/ExportButtons';
+import { exportTableToPDF, exportTableToExcel } from '../utils/exportUtils';
 import { Truck, Map, FileText, Edit, Trash2 } from 'lucide-react';
 
 export function CiudadesTab({ data, permissions, onUpdateCity, onDeleteCity }) {
@@ -45,6 +47,19 @@ export function CiudadesTab({ data, permissions, onUpdateCity, onDeleteCity }) {
     setIsEditOpen(true);
   };
 
+  // Export handlers
+  const exportColumns = [
+    { key: 'name', label: 'Ciudad' },
+    { key: 'terminalsCount', label: 'Nº Terminales' },
+    { key: 'contractsCount', label: 'Nº Contratos' },
+    { key: 'companiesCount', label: 'Nº Empresas' },
+    { key: 'plannedVehicles', label: 'Veh. Planificados' },
+    { key: 'actualVehicles', label: 'Veh. Físicos Reales' },
+    { key: 'terminalsList', label: 'Terminales' },
+  ];
+  const handleExportPDF = () => exportTableToPDF('Ciudades de Operación', exportColumns, ciudades, 'ciudades');
+  const handleExportExcel = () => exportTableToExcel('Ciudades', exportColumns, ciudades, 'ciudades');
+
   const handleEditSubmit = (e) => {
     e.preventDefault();
     if (!cityName.trim()) {
@@ -83,7 +98,10 @@ export function CiudadesTab({ data, permissions, onUpdateCity, onDeleteCity }) {
 
   return (
     <div className="flex flex-col lg:flex-row gap-6">
-      <div className={`flex-1 transition-all duration-300 ${selectedCity ? 'w-full lg:w-2/3' : 'w-full'}`}>
+      <div className={`flex-1 transition-all duration-300 ${selectedCity ? 'w-full lg:w-2/3' : 'w-full'} space-y-4`}>
+        <div className="flex justify-start">
+          <ExportButtons onExportPDF={handleExportPDF} onExportExcel={handleExportExcel} />
+        </div>
         <DataTable
           columns={columns}
           data={ciudades}

@@ -2,6 +2,8 @@ import React, { useState, useMemo } from 'react';
 import { DataTable } from './ui/DataTable';
 import { SidePanel } from './ui/SidePanel';
 import { Dialog } from './ui/Dialog';
+import { ExportButtons } from './ui/ExportButtons';
+import { exportTableToPDF, exportTableToExcel } from '../utils/exportUtils';
 import { Truck, Building2, MapPin, Tag, Plus, Edit, Trash2 } from 'lucide-react';
 
 export function ContratosTab({ data, permissions, onAddContract, onUpdateContract, onDeleteContract }) {
@@ -151,12 +153,27 @@ export function ContratosTab({ data, permissions, onAddContract, onUpdateContrac
     ? vehicles.filter(v => v.contract === selectedContract.contractNumber)
     : [];
 
+  // Export handlers
+  const exportColumns = [
+    { key: 'contractNumber', label: 'Nº Contrato' },
+    { key: 'empresa', label: 'Empresa' },
+    { key: 'entityId', label: 'Entity ID' },
+    { key: 'ciudad', label: 'Ciudad' },
+    { key: 'terminal', label: 'Terminal' },
+    { key: 'cantidad', label: 'Veh. Planificados' },
+    { key: 'actualCount', label: 'Veh. Físicos Reales' },
+    { key: 'contratoViejo', label: 'Contrato Viejo' },
+  ];
+  const handleExportPDF = () => exportTableToPDF('Contratos de Servicio', exportColumns, contratos, 'contratos');
+  const handleExportExcel = () => exportTableToExcel('Contratos', exportColumns, contratos, 'contratos');
+
   return (
     <div className="flex flex-col lg:flex-row gap-6">
       <div className={`flex-1 transition-all duration-300 ${selectedContract ? 'w-full lg:w-2/3' : 'w-full'} space-y-4`}>
         {/* Header Actions */}
-        {permissions.isOperator && (
-          <div className="flex justify-end">
+        <div className="flex items-center justify-between gap-3">
+          <ExportButtons onExportPDF={handleExportPDF} onExportExcel={handleExportExcel} />
+          {permissions.isOperator && (
             <button
               onClick={handleOpenAdd}
               className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition-colors cursor-pointer"
@@ -164,8 +181,8 @@ export function ContratosTab({ data, permissions, onAddContract, onUpdateContrac
               <Plus size={14} />
               Añadir Contrato
             </button>
-          </div>
-        )}
+          )}
+        </div>
 
         <DataTable
           columns={columns}

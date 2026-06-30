@@ -2,6 +2,9 @@ import React, { useState, useMemo } from 'react';
 import { DataTable } from './ui/DataTable';
 import { SidePanel } from './ui/SidePanel';
 import { Dialog } from './ui/Dialog';
+import { ExportButtons } from './ui/ExportButtons';
+import { VehicleDocuments } from './ui/VehicleDocuments';
+import { exportTableToPDF, exportTableToExcel, exportVehicleDetailPDF, exportVehicleDetailExcel } from '../utils/exportUtils';
 import { 
   Truck, 
   Info, 
@@ -70,7 +73,30 @@ export function VehiculosTab({ data, permissions, onAddVehicle, onUpdateVehicle,
   const uniqueMakes = useMemo(() => Array.from(new Set(vehicles.map(v => v.make).filter(Boolean))).sort(), [vehicles]);
   const uniqueCities = useMemo(() => ciudades.map(c => c.name).sort(), [ciudades]);
 
-  // Sync entityId when contract changes in form
+  // Export column definitions (plain text, no renderers)
+  const exportColumns = [
+    { key: 'unitNo', label: 'Unidad' },
+    { key: 'make', label: 'Marca' },
+    { key: 'year', label: 'Año' },
+    { key: 'bodyType', label: 'Carrocería' },
+    { key: 'vin', label: 'VIN' },
+    { key: 'tag', label: 'Placa / Tag' },
+    { key: 'city', label: 'Ciudad' },
+    { key: 'empresa', label: 'Empresa' },
+    { key: 'contract', label: 'Contrato' },
+    { key: 'terminal', label: 'Terminal' },
+  ];
+
+  const handleExportTablePDF = () =>
+    exportTableToPDF('Inventario de Vehículos', exportColumns, vehicles, 'vehiculos');
+
+  const handleExportTableExcel = () =>
+    exportTableToExcel('Vehículos', exportColumns, vehicles, 'vehiculos');
+
+  const handleExportVehiclePDF = () => selectedVehicle && exportVehicleDetailPDF(selectedVehicle);
+  const handleExportVehicleExcel = () => selectedVehicle && exportVehicleDetailExcel(selectedVehicle);
+
+
   const handleFormContractChange = (val) => {
     setContract(val);
     if (val === 'No encontrado' || val === '') {
@@ -205,8 +231,12 @@ export function VehiculosTab({ data, permissions, onAddVehicle, onUpdateVehicle,
     <div className="flex flex-col lg:flex-row gap-6">
       <div className={`flex-1 transition-all duration-300 ${selectedVehicle ? 'w-full lg:w-2/3' : 'w-full'} space-y-4`}>
         {/* Header Actions */}
-        {permissions.isOperator && (
-          <div className="flex justify-end">
+        <div className="flex items-center justify-between gap-3">
+          <ExportButtons
+            onExportPDF={handleExportTablePDF}
+            onExportExcel={handleExportTableExcel}
+          />
+          {permissions.isOperator && (
             <button
               onClick={handleOpenAdd}
               className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition-colors cursor-pointer"
@@ -214,8 +244,8 @@ export function VehiculosTab({ data, permissions, onAddVehicle, onUpdateVehicle,
               <Plus size={14} />
               Añadir Vehículo
             </button>
-          </div>
-        )}
+          )}
+        </div>
         
         <DataTable
           columns={columns}
@@ -236,7 +266,7 @@ export function VehiculosTab({ data, permissions, onAddVehicle, onUpdateVehicle,
           <div className="space-y-5">
             {/* Operator/Admin Actions inside Panel */}
             {permissions.isOperator && (
-              <div className="flex items-center gap-2 pb-3 border-b border-zinc-100 dark:border-zinc-800">
+              <div className="flex items-center gap-2 pb-2 border-b border-zinc-100 dark:border-zinc-800">
                 <button
                   onClick={handleOpenEdit}
                   className="flex items-center gap-1 px-3 py-1.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300 rounded-lg text-xs hover:bg-zinc-50 dark:hover:bg-zinc-800 font-semibold cursor-pointer flex-1 justify-center transition-colors shadow-sm"
@@ -255,6 +285,16 @@ export function VehiculosTab({ data, permissions, onAddVehicle, onUpdateVehicle,
                 )}
               </div>
             )}
+
+            {/* Individual Export Buttons */}
+            <div className="flex items-center justify-between pb-3 border-b border-zinc-100 dark:border-zinc-800">
+              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Exportar Ficha</span>
+              <ExportButtons
+                onExportPDF={handleExportVehiclePDF}
+                onExportExcel={handleExportVehicleExcel}
+                size="xs"
+              />
+            </div>
 
             {/* Alert if not associated */}
             {(selectedVehicle.contract === 'No encontrado' || selectedVehicle.empresa === 'No asociado') && (
@@ -345,6 +385,15 @@ export function VehiculosTab({ data, permissions, onAddVehicle, onUpdateVehicle,
                 </div>
               </div>
             </div>
+
+            {/* === Registraciones / Documentos del Vehículo === */}
+            <div className="pt-3 border-t border-zinc-100 dark:border-zinc-800">
+              <VehicleDocuments
+                vehicle={selectedVehicle}
+                permissions={permissions}
+              />
+            </div>
+
           </div>
         )}
       </SidePanel>

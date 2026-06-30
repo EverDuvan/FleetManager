@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { DataTable } from './ui/DataTable';
 import { SidePanel } from './ui/SidePanel';
 import { Dialog } from './ui/Dialog';
+import { ExportButtons } from './ui/ExportButtons';
+import { exportTableToPDF, exportTableToExcel } from '../utils/exportUtils';
 import { Building2, FileText, Truck, Edit, Trash2 } from 'lucide-react';
 
 export function EmpresasTab({ data, permissions, onUpdateCompany, onDeleteCompany }) {
@@ -43,6 +45,17 @@ export function EmpresasTab({ data, permissions, onUpdateCompany, onDeleteCompan
     }
   ];
 
+  // Export handlers
+  const exportColumns = [
+    { key: 'empresa', label: 'Empresa' },
+    { key: 'entityId', label: 'Entity ID' },
+    { key: 'contractsCount', label: 'Nº Contratos' },
+    { key: 'plannedVehicles', label: 'Veh. Planificados' },
+    { key: 'actualVehicles', label: 'Veh. Físicos Reales' },
+  ];
+  const handleExportPDF = () => exportTableToPDF('Empresas Operadoras', exportColumns, empresas, 'empresas');
+  const handleExportExcel = () => exportTableToExcel('Empresas', exportColumns, empresas, 'empresas');
+
   const handleOpenEdit = () => {
     if (!selectedCompany) return;
     setEmpresaName(selectedCompany.empresa);
@@ -81,7 +94,10 @@ export function EmpresasTab({ data, permissions, onUpdateCompany, onDeleteCompan
 
   return (
     <div className="flex flex-col lg:flex-row gap-6">
-      <div className={`flex-1 transition-all duration-300 ${selectedCompany ? 'w-full lg:w-2/3' : 'w-full'}`}>
+      <div className={`flex-1 transition-all duration-300 ${selectedCompany ? 'w-full lg:w-2/3' : 'w-full'} space-y-4`}>
+        <div className="flex justify-start">
+          <ExportButtons onExportPDF={handleExportPDF} onExportExcel={handleExportExcel} />
+        </div>
         <DataTable
           columns={columns}
           data={empresas}

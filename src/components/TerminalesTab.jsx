@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { DataTable } from './ui/DataTable';
 import { SidePanel } from './ui/SidePanel';
 import { Dialog } from './ui/Dialog';
+import { ExportButtons } from './ui/ExportButtons';
+import { exportTableToPDF, exportTableToExcel } from '../utils/exportUtils';
 import { Truck, MapPin, Building2, FileText, Activity, Edit, Trash2 } from 'lucide-react';
 
 export function TerminalesTab({ data, permissions, onUpdateTerminal, onDeleteTerminal }) {
@@ -92,9 +94,24 @@ export function TerminalesTab({ data, permissions, onUpdateTerminal, onDeleteTer
       )
     : [];
 
+  // Export handlers
+  const exportColumns = [
+    { key: 'terminal', label: 'Terminal' },
+    { key: 'ciudad', label: 'Ciudad' },
+    { key: 'empresa', label: 'Empresa' },
+    { key: 'contractNumber', label: 'Nº Contrato' },
+    { key: 'planned', label: 'Veh. Planificados' },
+    { key: 'actual', label: 'Veh. Físicos Reales' },
+  ];
+  const handleExportPDF = () => exportTableToPDF('Terminales de Servicio', exportColumns, terminales, 'terminales');
+  const handleExportExcel = () => exportTableToExcel('Terminales', exportColumns, terminales, 'terminales');
+
   return (
     <div className="flex flex-col lg:flex-row gap-6">
-      <div className={`flex-1 transition-all duration-300 ${selectedTerminal ? 'w-full lg:w-2/3' : 'w-full'}`}>
+      <div className={`flex-1 transition-all duration-300 ${selectedTerminal ? 'w-full lg:w-2/3' : 'w-full'} space-y-4`}>
+        <div className="flex justify-start">
+          <ExportButtons onExportPDF={handleExportPDF} onExportExcel={handleExportExcel} />
+        </div>
         <DataTable
           columns={columns}
           data={terminales}

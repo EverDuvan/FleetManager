@@ -121,7 +121,8 @@ export function parseConsolidadoCSV(csvText) {
         contract: contractNum || 'No encontrado',
         entityId: entityId || 'No encontrado',
         empresa,
-        terminal
+        terminal,
+        status: 'Activo'
       });
       idx++;
     }
@@ -157,8 +158,11 @@ export function deriveAggregates(contracts, vehicles) {
     companiesMap[c.entityId].plannedVehicles += c.cantidad;
   });
 
-  // Count vehicles per company
+  // Count vehicles per company (exclude inactive ones)
   vehicles.forEach(v => {
+    if (v.status === 'Sin uso' || v.status === 'Fuera de servicio') {
+      return;
+    }
     if (v.entityId && companiesMap[v.entityId]) {
       companiesMap[v.entityId].actualVehicles++;
     } else if (v.empresa !== 'No asociado') {
@@ -171,9 +175,11 @@ export function deriveAggregates(contracts, vehicles) {
   
   const empresas = Object.values(companiesMap);
 
-  // 2. Unique Contracts
+  // 2. Unique Contracts (exclude inactive ones)
   const contratos = contracts.map(c => {
-    const actualCount = vehicles.filter(v => v.contract === c.contractNumber).length;
+    const actualCount = vehicles.filter(
+      v => v.contract === c.contractNumber && v.status !== 'Sin uso' && v.status !== 'Fuera de servicio'
+    ).length;
     return {
       contractNumber: c.contractNumber,
       empresa: c.empresa,
@@ -186,7 +192,7 @@ export function deriveAggregates(contracts, vehicles) {
     };
   });
 
-  // 3. Unique Cities
+  // 3. Unique Cities (exclude inactive ones)
   const citiesMap = {};
   contracts.forEach(c => {
     if (!citiesMap[c.ciudad]) {
@@ -206,6 +212,9 @@ export function deriveAggregates(contracts, vehicles) {
   });
 
   vehicles.forEach(v => {
+    if (v.status === 'Sin uso' || v.status === 'Fuera de servicio') {
+      return;
+    }
     const cityName = v.city || 'Sin Ciudad';
     if (cityName && cityName !== 'Sin Ciudad' && cityName !== 'No encontrado') {
       let foundCityKey = Object.keys(citiesMap).find(key => key.toLowerCase() === cityName.toLowerCase());
@@ -243,7 +252,7 @@ export function deriveAggregates(contracts, vehicles) {
     actualVehicles: c.actualVehicles
   }));
 
-  // 4. Unique Terminals
+  // 4. Unique Terminals (exclude inactive ones)
   const terminalsMap = {};
   contracts.forEach(c => {
     const key = `${c.terminal}-${c.ciudad}`;
@@ -261,6 +270,9 @@ export function deriveAggregates(contracts, vehicles) {
   });
 
   vehicles.forEach(v => {
+    if (v.status === 'Sin uso' || v.status === 'Fuera de servicio') {
+      return;
+    }
     let foundTerm = Object.values(terminalsMap).find(t => t.terminal === v.terminal);
     if (!foundTerm && v.city) {
       foundTerm = Object.values(terminalsMap).find(t => t.ciudad.toLowerCase() === v.city.toLowerCase());

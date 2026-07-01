@@ -8,6 +8,7 @@ import { TerminalesTab } from './components/TerminalesTab';
 import { VehiculosTab } from './components/VehiculosTab';
 import { UsuariosTab } from './components/UsuariosTab';
 import { AuthScreen } from './components/AuthScreen';
+import { HistorialTab } from './components/HistorialTab';
 import { parseConsolidadoCSV, deriveAggregates } from './utils/dataParser';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 
@@ -19,6 +20,7 @@ const DEFAULT_USERS = [
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
+  const [vehicleFilter, setVehicleFilter] = useState('all'); // 'all', 'active', 'inactive', 'unassociated'
   
   // Auth Session State
   const [currentUser, setCurrentUser] = useState(() => {
@@ -38,6 +40,12 @@ function App() {
   const [vehiclesRaw, setVehiclesRaw] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  // Movements Audit History State
+  const [movements, setMovements] = useState(() => {
+    const saved = localStorage.getItem('fleet_movements');
+    return saved ? JSON.parse(saved) : [];
+  });
 
   // Load Initial Data
   useEffect(() => {
@@ -125,29 +133,87 @@ function App() {
     localStorage.setItem('fleet_vehicles', JSON.stringify(newVehicles));
   };
 
+  // Movements logger helper
+  const logMovement = (action, entityType, entityId, description, changes = null) => {
+    const newMovement = {
+      id: `mov_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      timestamp: new Date().toISOString(),
+      user: currentUser?.username || 'Sistema',
+      action,
+      entityType,
+      entityId,
+      description,
+      changes
+    };
+    setMovements(prev => {
+      const updated = [newMovement, ...prev];
+      localStorage.setItem('fleet_movements', JSON.stringify(updated));
+      return updated;
+    });
+  };
+
   // CRUD Operations - VEHICLES
   const addVehicle = (vehicle) => {
     const updated = [vehicle, ...vehiclesRaw];
     persistState(contractsRaw, updated);
+    logMovement(
+      'Añadir Vehículo',
+      'Vehículo',
+      vehicle.vin,
+      `Vehículo Unidad ${vehicle.unitNo} (${vehicle.make}) añadido con estado "Activo".`
+    );
   };
 
   const updateVehicle = (vin, newVehicle) => {
+    const oldVehicle = vehiclesRaw.find(v => v.vin === vin);
     const updated = vehiclesRaw.map(v => v.vin === vin ? { ...v, ...newVehicle } : v);
     persistState(contractsRaw, updated);
+    if (oldVehicle) {
+      const changes = [];
+      const keys = ['unitNo', 'make', 'year', 'bodyType', 'tag', 'city', 'contract', 'status'];
+      keys.forEach(k => {
+        if (oldVehicle[k] !== newVehicle[k]) {
+          changes.push(`${k}: de "${oldVehicle[k] || 'N/A'}" a "${newVehicle[k] || 'N/A'}"`);
+        }
+      });
+      const changesStr = changes.length > 0 ? ` (Cambios: ${changes.join(', ')})` : '';
+      logMovement(
+        'Editar Vehículo',
+        'Vehículo',
+        vin,
+        `Vehículo Unidad ${newVehicle.unitNo} actualizado.${changesStr}`
+      );
+    }
   };
 
-  const deleteVehicle = (vin) => {
-    const updated = vehiclesRaw.filter(v => v.vin !== vin);
+  const deleteVehicle = (vin, newStatus = 'Fuera de servicio') => {
+    const target = vehiclesRaw.find(v => v.vin === vin);
+    const updated = vehiclesRaw.map(v => v.vin === vin ? { ...v, status: newStatus } : v);
     persistState(contractsRaw, updated);
+    if (target) {
+      logMovement(
+        'Desactivar Vehículo',
+        'Vehículo',
+        vin,
+        `Vehículo Unidad ${target.unitNo} (${target.make}) cambiado a estado "${newStatus}".`
+      );
+    }
   };
 
   // CRUD Operations - CONTRACTS
   const addContract = (contract) => {
     const updated = [...contractsRaw, contract];
     persistState(updated, vehiclesRaw);
+    logMovement(
+      'Añadir Contrato',
+      'Contrato',
+      contract.contractNumber,
+      `Contrato ${contract.contractNumber} asignado a ${contract.empresa} en ${contract.ciudad} con capacidad de ${contract.cantidad} unidades.`
+    );
   };
 
   const updateContract = (contractNumber, newContract) => {
+    const oldContract = contractsRaw.find(c => c.contractNumber === contractNumber);
     // Cascading update: if contract number changes, update vehicles referencing it
     const updatedContracts = contractsRaw.map(c => 
       c.contractNumber === contractNumber ? { ...c, ...newContract } : c
@@ -161,9 +227,26 @@ function App() {
     }
     
     persistState(updatedContracts, updatedVehicles);
+    if (oldContract) {
+      const changes = [];
+      const keys = ['contractNumber', 'empresa', 'entityId', 'terminal', 'ciudad', 'cantidad'];
+      keys.forEach(k => {
+        if (oldContract[k] !== newContract[k]) {
+          changes.push(`${k}: de "${oldContract[k] || 'N/A'}" a "${newContract[k] || 'N/A'}"`);
+        }
+      });
+      const changesStr = changes.length > 0 ? ` (Cambios: ${changes.join(', ')})` : '';
+      logMovement(
+        'Editar Contrato',
+        'Contrato',
+        contractNumber,
+        `Contrato ${contractNumber} actualizado.${changesStr}`
+      );
+    }
   };
 
   const deleteContract = (contractNumber) => {
+    const oldContract = contractsRaw.find(c => c.contractNumber === contractNumber);
     const updatedContracts = contractsRaw.filter(c => c.contractNumber !== contractNumber);
     // Unlink deleted contract from vehicles
     const updatedVehicles = vehiclesRaw.map(v => 
@@ -172,17 +255,33 @@ function App() {
         : v
     );
     persistState(updatedContracts, updatedVehicles);
+    if (oldContract) {
+      logMovement(
+        'Eliminar Contrato',
+        'Contrato',
+        contractNumber,
+        `Contrato ${contractNumber} eliminado de la base de datos.`
+      );
+    }
   };
 
   // CRUD Operations - COMPANIES (Cascading)
   const updateCompany = (entityId, newName) => {
+    const oldCompany = contractsRaw.find(c => c.entityId === entityId)?.empresa || entityId;
     const updatedContracts = contractsRaw.map(c => 
       c.entityId === entityId ? { ...c, empresa: newName } : c
     );
     persistState(updatedContracts, vehiclesRaw);
+    logMovement(
+      'Editar Empresa',
+      'Empresa',
+      entityId,
+      `Empresa "${oldCompany}" (ID: ${entityId}) renombrada a "${newName}".`
+    );
   };
 
   const deleteCompany = (entityId) => {
+    const oldCompany = contractsRaw.find(c => c.entityId === entityId)?.empresa || entityId;
     // Delete all contracts associated with this company
     const updatedContracts = contractsRaw.filter(c => c.entityId !== entityId);
     
@@ -193,6 +292,12 @@ function App() {
         : v
     );
     persistState(updatedContracts, updatedVehicles);
+    logMovement(
+      'Eliminar Empresa',
+      'Empresa',
+      entityId,
+      `Empresa "${oldCompany}" (ID: ${entityId}) eliminada junto con sus contratos asociados.`
+    );
   };
 
   // CRUD Operations - CITIES (Cascading)
@@ -204,6 +309,12 @@ function App() {
       v.city.toLowerCase() === oldName.toLowerCase() ? { ...v, city: newName } : v
     );
     persistState(updatedContracts, updatedVehicles);
+    logMovement(
+      'Editar Ciudad',
+      'Ciudad',
+      oldName,
+      `Ciudad "${oldName}" renombrada a "${newName}".`
+    );
   };
 
   const deleteCity = (cityName) => {
@@ -214,6 +325,12 @@ function App() {
       v.city.toLowerCase() === cityName.toLowerCase() ? { ...v, city: 'Sin Ciudad' } : v
     );
     persistState(updatedContracts, updatedVehicles);
+    logMovement(
+      'Eliminar Ciudad',
+      'Ciudad',
+      cityName,
+      `Ciudad "${cityName}" eliminada del sistema. Contratos y vehículos asociados fueron marcados como 'Sin Ciudad'.`
+    );
   };
 
   // CRUD Operations - TERMINALS (Cascading)
@@ -229,6 +346,12 @@ function App() {
         : v
     );
     persistState(updatedContracts, updatedVehicles);
+    logMovement(
+      'Editar Terminal',
+      'Terminal',
+      oldCode,
+      `Terminal "${oldCode}" en "${cityName}" renombrada a "${newCode}".`
+    );
   };
 
   const deleteTerminal = (terminalCode, cityName) => {
@@ -243,6 +366,12 @@ function App() {
         : v
     );
     persistState(updatedContracts, updatedVehicles);
+    logMovement(
+      'Eliminar Terminal',
+      'Terminal',
+      terminalCode,
+      `Terminal "${terminalCode}" en "${cityName}" eliminada del sistema.`
+    );
   };
 
   // CRUD Operations - USERS
@@ -281,7 +410,15 @@ function App() {
 
     switch (activeTab) {
       case 'dashboard':
-        return <DashboardTab data={data} />;
+        return (
+          <DashboardTab 
+            data={data} 
+            onNavigate={(tab, filter = 'all') => {
+              setVehicleFilter(filter);
+              setActiveTab(tab);
+            }} 
+          />
+        );
       case 'empresas':
         return (
           <EmpresasTab 
@@ -327,6 +464,24 @@ function App() {
             onAddVehicle={addVehicle}
             onUpdateVehicle={updateVehicle}
             onDeleteVehicle={deleteVehicle}
+            initialFilter={vehicleFilter}
+            onResetFilter={() => setVehicleFilter('all')}
+          />
+        );
+      case 'historial':
+        return (
+          <HistorialTab
+            movements={movements}
+            permissions={permissions}
+            onClearHistory={() => {
+              if (window.confirm('¿Está seguro de que desea vaciar todo el historial de auditoría? Esta acción no se puede deshacer.')) {
+                setMovements([]);
+                localStorage.setItem('fleet_movements', JSON.stringify([]));
+                setTimeout(() => {
+                  logMovement('Vaciar Historial', 'Historial', 'N/A', 'El historial de auditoría fue limpiado por el usuario.');
+                }, 100);
+              }
+            }}
           />
         );
       case 'usuarios':

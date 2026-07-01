@@ -1,6 +1,6 @@
 import React from 'react';
 import { ThemeToggle } from './ui/ThemeToggle';
-import { Truck, Building2, FileText, MapPin, Map, BarChart3, Users, LogOut } from 'lucide-react';
+import { Truck, Building2, FileText, MapPin, Map, BarChart3, Users, LogOut, History } from 'lucide-react';
 
 export function Layout({ activeTab, setActiveTab, children, loading, currentUser, onLogout }) {
   const isAdmin = currentUser?.role === 'admin';
@@ -12,6 +12,7 @@ export function Layout({ activeTab, setActiveTab, children, loading, currentUser
     { id: 'ciudades', label: 'Ciudades', icon: MapPin },
     { id: 'terminales', label: 'Terminales', icon: Map },
     { id: 'vehiculos', label: 'Vehículos', icon: Truck },
+    { id: 'historial', label: 'Historial', icon: History },
   ];
 
   if (isAdmin) {

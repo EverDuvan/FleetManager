@@ -1,7 +1,7 @@
 import React from 'react';
 import { Card } from './Card';
 
-export function StatCard({ title, value, icon: Icon, description, trend, trendType = 'neutral' }) {
+export function StatCard({ title, value, icon: Icon, description, trend, trendType = 'neutral', onClick }) {
   const trendColor = {
     positive: 'bg-emerald-100 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400',
     negative: 'bg-rose-100 dark:bg-rose-950/30 text-rose-700 dark:text-rose-400',
@@ -9,7 +9,10 @@ export function StatCard({ title, value, icon: Icon, description, trend, trendTy
   }[trendType];
 
   return (
-    <Card className="hover:border-zinc-300 dark:hover:border-zinc-700 transition-all duration-300 group">
+    <Card 
+      onClick={onClick}
+      className={`transition-all duration-300 group ${onClick ? 'cursor-pointer hover:border-zinc-400 dark:hover:border-zinc-600 hover:shadow-md hover:bg-zinc-50/10 dark:hover:bg-zinc-900/10' : 'hover:border-zinc-300 dark:hover:border-zinc-700'}`}
+    >
       <div className="p-6">
         <div className="flex items-center justify-between">
           <span className="text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">

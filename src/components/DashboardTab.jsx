@@ -29,7 +29,7 @@ import {
   Area 
 } from 'recharts';
 
-export function DashboardTab({ data }) {
+export function DashboardTab({ data, onNavigate }) {
   const { vehicles, empresas, contratos, ciudades, terminales } = data;
 
   // Process data for charts
@@ -83,12 +83,30 @@ export function DashboardTab({ data }) {
     })).sort((a, b) => b.Planificado - a.Planificado);
   }, [terminales]);
 
-  // Vehicle Association Status
-  const associatedCount = useMemo(() => {
-    return vehicles.filter(v => v.contract !== 'No encontrado' && v.empresa !== 'No asociado').length;
+  // Vehicle Association & Operational Status
+  const activeCount = useMemo(() => {
+    return vehicles.filter(v => !v.status || v.status === 'Activo').length;
   }, [vehicles]);
 
-  const unassociatedCount = vehicles.length - associatedCount;
+  const inactiveCount = useMemo(() => {
+    return vehicles.filter(v => v.status === 'Sin uso' || v.status === 'Fuera de servicio').length;
+  }, [vehicles]);
+
+  const sinUsoCount = useMemo(() => {
+    return vehicles.filter(v => v.status === 'Sin uso').length;
+  }, [vehicles]);
+
+  const fueraServicioCount = useMemo(() => {
+    return vehicles.filter(v => v.status === 'Fuera de servicio').length;
+  }, [vehicles]);
+
+  const associatedCount = useMemo(() => {
+    return vehicles.filter(v => (!v.status || v.status === 'Activo') && v.contract !== 'No encontrado' && v.empresa !== 'No asociado').length;
+  }, [vehicles]);
+
+  const unassociatedCount = useMemo(() => {
+    return vehicles.filter(v => (!v.status || v.status === 'Activo') && (v.contract === 'No encontrado' || v.empresa === 'No asociado')).length;
+  }, [vehicles]);
 
   // Recharts color palette
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#06b6d4', '#ef4444', '#84cc16'];
@@ -111,60 +129,75 @@ export function DashboardTab({ data }) {
 
   return (
     <div className="space-y-6">
-      {/* Metrics Row */}
+      {/* Metrics Row 1 */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="Total Vehículos"
           value={vehicles.length}
           icon={Truck}
-          description="Suma total de vehículos en el registro"
-          trend="Allocated: 172"
+          description="Suma total de vehículos registrados"
+          trend={`${activeCount} activos / ${inactiveCount} inactivos`}
           trendType="neutral"
+          onClick={() => onNavigate?.('vehiculos', 'all')}
         />
         <StatCard
-          title="Vehículos Asociados"
-          value={associatedCount}
+          title="Vehículos Activos"
+          value={activeCount}
           icon={CheckCircle2}
-          description="Vinculados a contratos vigentes"
-          trend={`${((associatedCount / vehicles.length) * 100).toFixed(0)}% del total`}
+          description="Unidades operativas en servicio"
+          trend={`${associatedCount} vinculados a contrato`}
           trendType="positive"
+          onClick={() => onNavigate?.('vehiculos', 'active')}
         />
         <StatCard
-          title="Vehículos Sin Contrato"
+          title="Vehículos Inactivos"
+          value={inactiveCount}
+          icon={ShieldAlert}
+          description="Fuera de servicio / Sin uso"
+          trend={`${sinUsoCount} sin uso / ${fueraServicioCount} f. de servicio`}
+          trendType="negative"
+          onClick={() => onNavigate?.('vehiculos', 'inactive')}
+        />
+        <StatCard
+          title="Activos Sin Contrato"
           value={unassociatedCount}
           icon={AlertTriangle}
-          description="Vehículos marcados 'No encontrado'"
-          trend={`${unassociatedCount} desasociados`}
-          trendType="negative"
+          description="Unidades activas no vinculadas"
+          trend="Requieren vinculación"
+          trendType="neutral"
+          onClick={() => onNavigate?.('vehiculos', 'unassociated')}
         />
+      </div>
+
+      {/* Metrics Row 2 */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="Empresas Registradas"
           value={empresas.length}
           icon={Building2}
-          description="Entidades transportistas activas"
-          trend={`${contratos.length} contratos`}
-          trendType="neutral"
+          description="Entidades transportistas"
+          onClick={() => onNavigate?.('empresas')}
         />
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <StatCard
           title="Contratos Totales"
           value={contratos.length}
           icon={FileText}
-          description="Contratos definidos en el anexo B"
+          description="Contratos de anexo B"
+          onClick={() => onNavigate?.('contratos')}
         />
         <StatCard
           title="Terminales Operativas"
           value={terminales.length}
           icon={Map}
-          description="Puntos de carga y distribución"
+          description="Puntos de distribución"
+          onClick={() => onNavigate?.('terminales')}
         />
         <StatCard
           title="Ciudades de Operación"
           value={ciudades.length}
           icon={MapPin}
-          description="Cobertura de la red logística"
+          description="Cobertura de red logística"
+          onClick={() => onNavigate?.('ciudades')}
         />
       </div>
 

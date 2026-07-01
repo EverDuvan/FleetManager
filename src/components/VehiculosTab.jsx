@@ -20,13 +20,29 @@ import {
   Trash2 
 } from 'lucide-react';
 
-export function VehiculosTab({ data, permissions, onAddVehicle, onUpdateVehicle, onDeleteVehicle }) {
+export function VehiculosTab({ data, permissions, onAddVehicle, onUpdateVehicle, onDeleteVehicle, initialFilter = 'all', onResetFilter }) {
   const { vehicles, contratos, ciudades, empresas } = data;
+
+  // Filter vehicles based on active filter from dashboard
+  const filteredVehicles = useMemo(() => {
+    if (initialFilter === 'active') {
+      return vehicles.filter(v => !v.status || v.status === 'Activo');
+    }
+    if (initialFilter === 'inactive') {
+      return vehicles.filter(v => v.status === 'Sin uso' || v.status === 'Fuera de servicio');
+    }
+    if (initialFilter === 'unassociated') {
+      return vehicles.filter(v => (!v.status || v.status === 'Activo') && (v.contract === 'No encontrado' || v.empresa === 'No asociado'));
+    }
+    return vehicles;
+  }, [vehicles, initialFilter]);
+
   const [selectedVehicle, setSelectedVehicle] = useState(null);
   
   // Modals Open State
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isDeactivateOpen, setIsDeactivateOpen] = useState(false);
   
   // Form States
   const [unitNo, setUnitNo] = useState('');
@@ -38,6 +54,8 @@ export function VehiculosTab({ data, permissions, onAddVehicle, onUpdateVehicle,
   const [city, setCity] = useState('');
   const [contract, setContract] = useState('');
   const [entityId, setEntityId] = useState('');
+  const [status, setStatus] = useState('Activo');
+  const [deactivateStatus, setDeactivateStatus] = useState('Fuera de servicio');
   const [error, setError] = useState('');
 
   const columns = [
@@ -49,6 +67,26 @@ export function VehiculosTab({ data, permissions, onAddVehicle, onUpdateVehicle,
     { key: 'tag', label: 'Placa / Tag', sortable: true, filterable: false, cellClassName: 'font-mono font-semibold' },
     { key: 'city', label: 'Ciudad', sortable: true, filterable: true },
     { key: 'empresa', label: 'Empresa', sortable: true, filterable: true, cellClassName: 'truncate max-w-[120px]' },
+    {
+      key: 'status',
+      label: 'Estado Vehículo',
+      sortable: true,
+      filterable: true,
+      render: (val) => {
+        const stat = val || 'Activo';
+        const colors = {
+          'Activo': 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400',
+          'Sin uso': 'bg-amber-100 text-amber-700 dark:bg-amber-950/20 dark:text-amber-400',
+          'Fuera de servicio': 'bg-rose-100 text-rose-700 dark:bg-rose-950/20 dark:text-rose-400'
+        };
+        const style = colors[stat] || colors['Activo'];
+        return (
+          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${style}`}>
+            {stat}
+          </span>
+        );
+      }
+    },
     {
       key: 'estado',
       label: 'Estado Contrato',
@@ -85,13 +123,14 @@ export function VehiculosTab({ data, permissions, onAddVehicle, onUpdateVehicle,
     { key: 'empresa', label: 'Empresa' },
     { key: 'contract', label: 'Contrato' },
     { key: 'terminal', label: 'Terminal' },
+    { key: 'status', label: 'Estado Vehículo' },
   ];
 
   const handleExportTablePDF = () =>
-    exportTableToPDF('Inventario de Vehículos', exportColumns, vehicles, 'vehiculos');
+    exportTableToPDF('Inventario de Vehículos', exportColumns, filteredVehicles, 'vehiculos');
 
   const handleExportTableExcel = () =>
-    exportTableToExcel('Vehículos', exportColumns, vehicles, 'vehiculos');
+    exportTableToExcel('Vehículos', exportColumns, filteredVehicles, 'vehiculos');
 
   const handleExportVehiclePDF = () => selectedVehicle && exportVehicleDetailPDF(selectedVehicle);
   const handleExportVehicleExcel = () => selectedVehicle && exportVehicleDetailExcel(selectedVehicle);
@@ -119,6 +158,7 @@ export function VehiculosTab({ data, permissions, onAddVehicle, onUpdateVehicle,
     setCity('');
     setContract('No encontrado');
     setEntityId('No encontrado');
+    setStatus('Activo');
     setError('');
     setIsAddOpen(true);
   };
@@ -156,7 +196,8 @@ export function VehiculosTab({ data, permissions, onAddVehicle, onUpdateVehicle,
       contract: contract || 'No encontrado',
       entityId: entityId || 'No encontrado',
       empresa: resolvedEmpresa,
-      terminal: resolvedTerminal
+      terminal: resolvedTerminal,
+      status: status || 'Activo'
     });
     setIsAddOpen(false);
   };
@@ -172,6 +213,7 @@ export function VehiculosTab({ data, permissions, onAddVehicle, onUpdateVehicle,
     setCity(selectedVehicle.city === 'Sin Ciudad' ? '' : selectedVehicle.city);
     setContract(selectedVehicle.contract);
     setEntityId(selectedVehicle.entityId);
+    setStatus(selectedVehicle.status || 'Activo');
     setError('');
     setIsEditOpen(true);
   };
@@ -211,7 +253,8 @@ export function VehiculosTab({ data, permissions, onAddVehicle, onUpdateVehicle,
       contract: contract || 'No encontrado',
       entityId: entityId || 'No encontrado',
       empresa: resolvedEmpresa,
-      terminal: resolvedTerminal
+      terminal: resolvedTerminal,
+      status: status || 'Activo'
     };
 
     onUpdateVehicle(selectedVehicle.vin, updated);
@@ -219,12 +262,17 @@ export function VehiculosTab({ data, permissions, onAddVehicle, onUpdateVehicle,
     setIsEditOpen(false);
   };
 
-  const handleDelete = () => {
+  const handleOpenDeactivate = () => {
     if (!selectedVehicle) return;
-    if (window.confirm(`¿Está seguro de que desea eliminar permanentemente el vehículo Unidad ${selectedVehicle.unitNo}?`)) {
-      onDeleteVehicle(selectedVehicle.vin);
-      setSelectedVehicle(null);
-    }
+    setDeactivateStatus('Fuera de servicio');
+    setIsDeactivateOpen(true);
+  };
+
+  const handleDeactivateConfirm = (e) => {
+    e.preventDefault();
+    onDeleteVehicle(selectedVehicle.vin, deactivateStatus);
+    setSelectedVehicle(prev => ({ ...prev, status: deactivateStatus }));
+    setIsDeactivateOpen(false);
   };
 
   return (
@@ -247,9 +295,28 @@ export function VehiculosTab({ data, permissions, onAddVehicle, onUpdateVehicle,
           )}
         </div>
         
+        {initialFilter !== 'all' && (
+          <div className="flex items-center justify-between p-3.5 bg-blue-50/50 dark:bg-blue-950/10 border border-blue-105/50 dark:border-blue-900/20 rounded-xl text-xs text-blue-850 dark:text-blue-400">
+            <div className="flex items-center gap-2">
+              <span className="font-bold">Filtro aplicado:</span>
+              <span className="font-semibold">
+                {initialFilter === 'active' && 'Vehículos Activos'}
+                {initialFilter === 'inactive' && 'Vehículos Inactivos (Sin uso / Fuera de servicio)'}
+                {initialFilter === 'unassociated' && 'Vehículos Activos Sin Contrato'}
+              </span>
+            </div>
+            <button
+              onClick={onResetFilter}
+              className="px-2.5 py-1 bg-white dark:bg-zinc-900 border border-blue-200 dark:border-blue-800 rounded-lg font-bold text-blue-600 dark:text-blue-400 hover:bg-blue-50/50 dark:hover:bg-zinc-800 transition-all cursor-pointer shadow-sm"
+            >
+              Mostrar Todos
+            </button>
+          </div>
+        )}
+
         <DataTable
           columns={columns}
-          data={vehicles}
+          data={filteredVehicles}
           idField="vin"
           onRowClick={(row) => setSelectedVehicle(row)}
           selectedRowId={selectedVehicle?.vin}
@@ -276,11 +343,11 @@ export function VehiculosTab({ data, permissions, onAddVehicle, onUpdateVehicle,
                 </button>
                 {permissions.isAdmin && (
                   <button
-                    onClick={handleDelete}
+                    onClick={handleOpenDeactivate}
                     className="flex items-center gap-1 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/30 rounded-lg text-xs font-semibold cursor-pointer flex-1 justify-center transition-colors shadow-sm"
                   >
                     <Trash2 size={12} />
-                    Eliminar
+                    Desactivar
                   </button>
                 )}
               </div>
@@ -348,6 +415,29 @@ export function VehiculosTab({ data, permissions, onAddVehicle, onUpdateVehicle,
                 </div>
                 <span className="px-1.5 py-0.5 bg-blue-105 dark:bg-blue-950 text-blue-700 dark:text-blue-400 rounded text-xs font-bold font-mono">
                   {selectedVehicle.tag}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between p-2.5 bg-zinc-50 dark:bg-zinc-900 border border-zinc-100 dark:border-zinc-800/50 rounded-lg">
+                <div className="flex items-center gap-2">
+                  <ShieldAlert size={14} className="text-zinc-400" />
+                  <span className="text-zinc-500 dark:text-zinc-400 text-xs font-semibold">Estado Vehículo</span>
+                </div>
+                <span className="text-xs">
+                  {(() => {
+                    const stat = selectedVehicle.status || 'Activo';
+                    const colors = {
+                      'Activo': 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/20 dark:text-emerald-400',
+                      'Sin uso': 'bg-amber-100 text-amber-700 dark:bg-amber-950/20 dark:text-amber-400',
+                      'Fuera de servicio': 'bg-rose-100 text-rose-700 dark:bg-rose-950/20 dark:text-rose-400'
+                    };
+                    const style = colors[stat] || colors['Activo'];
+                    return (
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${style}`}>
+                        {stat}
+                      </span>
+                    );
+                  })()}
                 </span>
               </div>
             </div>
@@ -504,6 +594,19 @@ export function VehiculosTab({ data, permissions, onAddVehicle, onUpdateVehicle,
             </div>
           </div>
 
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-zinc-500">Estado del Vehículo</label>
+            <select
+              value={status}
+              onChange={e => setStatus(e.target.value)}
+              className="w-full bg-white dark:bg-[#09090b] border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-955 dark:text-zinc-50"
+            >
+              <option value="Activo">Activo (En servicio)</option>
+              <option value="Sin uso">Sin uso (Inactivo)</option>
+              <option value="Fuera de servicio">Fuera de servicio (Inactivo)</option>
+            </select>
+          </div>
+
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
@@ -618,6 +721,19 @@ export function VehiculosTab({ data, permissions, onAddVehicle, onUpdateVehicle,
             </div>
           </div>
 
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-zinc-500">Estado del Vehículo</label>
+            <select
+              value={status}
+              onChange={e => setStatus(e.target.value)}
+              className="w-full bg-white dark:bg-[#09090b] border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-955 dark:text-zinc-50"
+            >
+              <option value="Activo">Activo (En servicio)</option>
+              <option value="Sin uso">Sin uso (Inactivo)</option>
+              <option value="Fuera de servicio">Fuera de servicio (Inactivo)</option>
+            </select>
+          </div>
+
           <div className="flex justify-end gap-2 pt-2">
             <button
               type="button"
@@ -631,6 +747,41 @@ export function VehiculosTab({ data, permissions, onAddVehicle, onUpdateVehicle,
               className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-xs font-semibold"
             >
               Guardar Cambios
+            </button>
+          </div>
+        </form>
+      </Dialog>
+
+      {/* Deactivate Dialog */}
+      <Dialog isOpen={isDeactivateOpen} onClose={() => setIsDeactivateOpen(false)} title={`Desactivar Vehículo: Unidad ${selectedVehicle?.unitNo}`}>
+        <form onSubmit={handleDeactivateConfirm} className="space-y-4">
+          <p className="text-sm text-zinc-650 dark:text-zinc-400">
+            Al desactivar la unidad <strong>{selectedVehicle?.unitNo}</strong> (VIN: {selectedVehicle?.vin}), esta permanecerá en la base de datos pero su estado cambiará a inactivo.
+          </p>
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-zinc-500">Seleccione el nuevo estado:</label>
+            <select
+              value={deactivateStatus}
+              onChange={e => setDeactivateStatus(e.target.value)}
+              className="w-full bg-white dark:bg-[#09090b] border border-zinc-200 dark:border-zinc-800 rounded-lg px-3 py-2 text-sm text-zinc-950 dark:text-zinc-50"
+            >
+              <option value="Sin uso">Sin uso (Inactivo)</option>
+              <option value="Fuera de servicio">Fuera de servicio (Inactivo)</option>
+            </select>
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={() => setIsDeactivateOpen(false)}
+              className="px-4 py-2 border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-lg hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors text-xs font-semibold"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg transition-colors text-xs font-semibold shadow-sm shadow-rose-500/20 cursor-pointer"
+            >
+              Confirmar Desactivación
             </button>
           </div>
         </form>

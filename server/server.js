@@ -139,8 +139,14 @@ function parseConsolidadoCSV(csvText) {
 let db;
 
 async function initDB() {
+  const dbPath = process.env.DATABASE_PATH || path.join(__dirname, 'database.sqlite');
+  
+  // Ensure the database directory exists (especially important for mounted volumes)
+  const dbDir = path.dirname(dbPath);
+  await fs.mkdir(dbDir, { recursive: true });
+
   db = await open({
-    filename: path.join(__dirname, 'database.sqlite'),
+    filename: dbPath,
     driver: sqlite3.Database
   });
 
@@ -534,6 +540,18 @@ app.post('/api/movements/clear', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// Serve static files from the React frontend build directory (dist) in production
+const distPath = path.join(__dirname, '../dist');
+app.use(express.static(distPath));
+
+// Redirect all non-API paths to the index.html for single page application routing
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/api')) {
+    return next();
+  }
+  res.sendFile(path.join(distPath, 'index.html'));
 });
 
 // Start Express App

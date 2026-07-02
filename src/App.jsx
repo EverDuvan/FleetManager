@@ -42,37 +42,25 @@ function App() {
   const [error, setError] = useState(null);
 
   // Movements Audit History State
-  const [movements, setMovements] = useState(() => {
-    const saved = localStorage.getItem('fleet_movements');
-    return saved ? JSON.parse(saved) : [];
-  });
+  const [movements, setMovements] = useState([]);
 
-  // Load Initial Data
+  // Load Initial Data from API
   useEffect(() => {
     const loadInitialData = async () => {
       setLoading(true);
       setError(null);
       try {
-        const savedContracts = localStorage.getItem('fleet_contracts');
-        const savedVehicles = localStorage.getItem('fleet_vehicles');
-
-        if (savedContracts && savedVehicles) {
-          setContractsRaw(JSON.parse(savedContracts));
-          setVehiclesRaw(JSON.parse(savedVehicles));
-        } else {
-          // Fetch and parse the CSV
-          const response = await fetch('/data/schB - Consolidado.csv');
-          if (!response.ok) {
-            throw new Error(`Error al cargar el CSV (${response.status}: ${response.statusText})`);
-          }
-          const csvText = await response.text();
-          const parsed = parseConsolidadoCSV(csvText);
-          
-          setContractsRaw(parsed.contractsRaw);
-          setVehiclesRaw(parsed.vehiclesRaw);
-          
-          localStorage.setItem('fleet_contracts', JSON.stringify(parsed.contractsRaw));
-          localStorage.setItem('fleet_vehicles', JSON.stringify(parsed.vehiclesRaw));
+        const response = await fetch('/api/data');
+        if (!response.ok) {
+          throw new Error(`Error al conectar con la base de datos (${response.status}: ${response.statusText})`);
+        }
+        const result = await response.json();
+        setContractsRaw(result.contractsRaw || []);
+        setVehiclesRaw(result.vehiclesRaw || []);
+        setMovements(result.movements || []);
+        if (result.users && result.users.length > 0) {
+          setUsers(result.users);
+          localStorage.setItem('fleet_users', JSON.stringify(result.users));
         }
       } catch (err) {
         console.error('Error loading initial data:', err);
@@ -125,16 +113,14 @@ function App() {
     setActiveTab('dashboard');
   };
 
-  // State Persistence Helper
+  // State Persistence Helper (keeps React state updated)
   const persistState = (newContracts, newVehicles) => {
     setContractsRaw(newContracts);
     setVehiclesRaw(newVehicles);
-    localStorage.setItem('fleet_contracts', JSON.stringify(newContracts));
-    localStorage.setItem('fleet_vehicles', JSON.stringify(newVehicles));
   };
 
   // Movements logger helper
-  const logMovement = (action, entityType, entityId, description, changes = null) => {
+  const logMovement = async (action, entityType, entityId, description, changes = null) => {
     const newMovement = {
       id: `mov_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       timestamp: new Date().toISOString(),
@@ -143,260 +129,409 @@ function App() {
       entityType,
       entityId,
       description,
-      changes
+      changes: changes ? (typeof changes === 'string' ? changes : JSON.stringify(changes)) : null
     };
-    setMovements(prev => {
-      const updated = [newMovement, ...prev];
-      localStorage.setItem('fleet_movements', JSON.stringify(updated));
-      return updated;
-    });
-  };
-
-  // CRUD Operations - VEHICLES
-  const addVehicle = (vehicle) => {
-    const updated = [vehicle, ...vehiclesRaw];
-    persistState(contractsRaw, updated);
-    logMovement(
-      'Añadir Vehículo',
-      'Vehículo',
-      vehicle.vin,
-      `Vehículo Unidad ${vehicle.unitNo} (${vehicle.make}) añadido con estado "Activo".`
-    );
-  };
-
-  const updateVehicle = (vin, newVehicle) => {
-    const oldVehicle = vehiclesRaw.find(v => v.vin === vin);
-    const updated = vehiclesRaw.map(v => v.vin === vin ? { ...v, ...newVehicle } : v);
-    persistState(contractsRaw, updated);
-    if (oldVehicle) {
-      const changes = [];
-      const keys = ['unitNo', 'make', 'year', 'bodyType', 'tag', 'city', 'contract', 'status'];
-      keys.forEach(k => {
-        if (oldVehicle[k] !== newVehicle[k]) {
-          changes.push(`${k}: de "${oldVehicle[k] || 'N/A'}" a "${newVehicle[k] || 'N/A'}"`);
-        }
+    try {
+      const response = await fetch('/api/movements', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newMovement)
       });
-      const changesStr = changes.length > 0 ? ` (Cambios: ${changes.join(', ')})` : '';
-      logMovement(
-        'Editar Vehículo',
-        'Vehículo',
-        vin,
-        `Vehículo Unidad ${newVehicle.unitNo} actualizado.${changesStr}`
-      );
+      if (response.ok) {
+        const savedMovement = await response.json();
+        setMovements(prev => [savedMovement, ...prev]);
+      }
+    } catch (err) {
+      console.error('Error logging movement:', err);
     }
   };
 
-  const deleteVehicle = (vin, newStatus = 'Fuera de servicio') => {
-    const target = vehiclesRaw.find(v => v.vin === vin);
-    const updated = vehiclesRaw.map(v => v.vin === vin ? { ...v, status: newStatus } : v);
-    persistState(contractsRaw, updated);
-    if (target) {
+  // CRUD Operations - VEHICLES
+  const addVehicle = async (vehicle) => {
+    try {
+      const response = await fetch('/api/vehicles', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(vehicle)
+      });
+      if (!response.ok) throw new Error('Error al añadir vehículo en el servidor');
+      const savedVehicle = await response.json();
+      const updated = [savedVehicle, ...vehiclesRaw];
+      persistState(contractsRaw, updated);
       logMovement(
-        'Desactivar Vehículo',
+        'Añadir Vehículo',
         'Vehículo',
-        vin,
-        `Vehículo Unidad ${target.unitNo} (${target.make}) cambiado a estado "${newStatus}".`
+        vehicle.vin,
+        `Vehículo Unidad ${vehicle.unitNo} (${vehicle.make}) añadido con estado "Activo".`
       );
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const updateVehicle = async (vin, newVehicle) => {
+    try {
+      const response = await fetch(`/api/vehicles/${encodeURIComponent(vin)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newVehicle)
+      });
+      if (!response.ok) throw new Error('Error al actualizar vehículo en el servidor');
+      const savedVehicle = await response.json();
+      const oldVehicle = vehiclesRaw.find(v => v.vin === vin);
+      const updated = vehiclesRaw.map(v => v.vin === vin ? savedVehicle : v);
+      persistState(contractsRaw, updated);
+      if (oldVehicle) {
+        const changes = [];
+        const keys = ['unitNo', 'make', 'year', 'bodyType', 'tag', 'city', 'contract', 'status'];
+        keys.forEach(k => {
+          if (oldVehicle[k] !== newVehicle[k]) {
+            changes.push(`${k}: de "${oldVehicle[k] || 'N/A'}" a "${newVehicle[k] || 'N/A'}"`);
+          }
+        });
+        const changesStr = changes.length > 0 ? ` (Cambios: ${changes.join(', ')})` : '';
+        logMovement(
+          'Editar Vehículo',
+          'Vehículo',
+          vin,
+          `Vehículo Unidad ${newVehicle.unitNo} actualizado.${changesStr}`
+        );
+      }
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const deleteVehicle = async (vin, newStatus = 'Fuera de servicio') => {
+    try {
+      const response = await fetch(`/api/vehicles/${encodeURIComponent(vin)}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      });
+      if (!response.ok) throw new Error('Error al desactivar vehículo en el servidor');
+      const savedVehicle = await response.json();
+      const target = vehiclesRaw.find(v => v.vin === vin);
+      const updated = vehiclesRaw.map(v => v.vin === vin ? savedVehicle : v);
+      persistState(contractsRaw, updated);
+      if (target) {
+        logMovement(
+          'Desactivar Vehículo',
+          'Vehículo',
+          vin,
+          `Vehículo Unidad ${target.unitNo} (${target.make}) cambiado a estado "${newStatus}".`
+        );
+      }
+    } catch (err) {
+      alert(err.message);
     }
   };
 
   // CRUD Operations - CONTRACTS
-  const addContract = (contract) => {
-    const updated = [...contractsRaw, contract];
-    persistState(updated, vehiclesRaw);
-    logMovement(
-      'Añadir Contrato',
-      'Contrato',
-      contract.contractNumber,
-      `Contrato ${contract.contractNumber} asignado a ${contract.empresa} en ${contract.ciudad} con capacidad de ${contract.cantidad} unidades.`
-    );
-  };
-
-  const updateContract = (contractNumber, newContract) => {
-    const oldContract = contractsRaw.find(c => c.contractNumber === contractNumber);
-    // Cascading update: if contract number changes, update vehicles referencing it
-    const updatedContracts = contractsRaw.map(c => 
-      c.contractNumber === contractNumber ? { ...c, ...newContract } : c
-    );
-    
-    let updatedVehicles = [...vehiclesRaw];
-    if (newContract.contractNumber && newContract.contractNumber !== contractNumber) {
-      updatedVehicles = vehiclesRaw.map(v => 
-        v.contract === contractNumber ? { ...v, contract: newContract.contractNumber } : v
-      );
-    }
-    
-    persistState(updatedContracts, updatedVehicles);
-    if (oldContract) {
-      const changes = [];
-      const keys = ['contractNumber', 'empresa', 'entityId', 'terminal', 'ciudad', 'cantidad'];
-      keys.forEach(k => {
-        if (oldContract[k] !== newContract[k]) {
-          changes.push(`${k}: de "${oldContract[k] || 'N/A'}" a "${newContract[k] || 'N/A'}"`);
-        }
+  const addContract = async (contract) => {
+    try {
+      const response = await fetch('/api/contracts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(contract)
       });
-      const changesStr = changes.length > 0 ? ` (Cambios: ${changes.join(', ')})` : '';
+      if (!response.ok) throw new Error('Error al añadir contrato en el servidor');
+      const savedContract = await response.json();
+      const updated = [...contractsRaw, savedContract];
+      persistState(updated, vehiclesRaw);
       logMovement(
-        'Editar Contrato',
+        'Añadir Contrato',
         'Contrato',
-        contractNumber,
-        `Contrato ${contractNumber} actualizado.${changesStr}`
+        contract.contractNumber,
+        `Contrato ${contract.contractNumber} asignado a ${contract.empresa} en ${contract.ciudad} con capacidad de ${contract.cantidad} unidades.`
       );
+    } catch (err) {
+      alert(err.message);
     }
   };
 
-  const deleteContract = (contractNumber) => {
-    const oldContract = contractsRaw.find(c => c.contractNumber === contractNumber);
-    const updatedContracts = contractsRaw.filter(c => c.contractNumber !== contractNumber);
-    // Unlink deleted contract from vehicles
-    const updatedVehicles = vehiclesRaw.map(v => 
-      v.contract === contractNumber 
-        ? { ...v, contract: 'No encontrado', entityId: 'No encontrado', empresa: 'No asociado', terminal: 'N/A' } 
-        : v
-    );
-    persistState(updatedContracts, updatedVehicles);
-    if (oldContract) {
-      logMovement(
-        'Eliminar Contrato',
-        'Contrato',
-        contractNumber,
-        `Contrato ${contractNumber} eliminado de la base de datos.`
+  const updateContract = async (contractNumber, newContract) => {
+    try {
+      const response = await fetch(`/api/contracts/${encodeURIComponent(contractNumber)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newContract)
+      });
+      if (!response.ok) throw new Error('Error al actualizar contrato en el servidor');
+      const savedContract = await response.json();
+      
+      const oldContract = contractsRaw.find(c => c.contractNumber === contractNumber);
+      const updatedContracts = contractsRaw.map(c => 
+        c.contractNumber === contractNumber ? savedContract : c
       );
+      
+      let updatedVehicles = [...vehiclesRaw];
+      if (newContract.contractNumber && newContract.contractNumber !== contractNumber) {
+        updatedVehicles = vehiclesRaw.map(v => 
+          v.contract === contractNumber ? { ...v, contract: newContract.contractNumber } : v
+        );
+      }
+      
+      persistState(updatedContracts, updatedVehicles);
+      if (oldContract) {
+        const changes = [];
+        const keys = ['contractNumber', 'empresa', 'entityId', 'terminal', 'ciudad', 'cantidad'];
+        keys.forEach(k => {
+          if (oldContract[k] !== newContract[k]) {
+            changes.push(`${k}: de "${oldContract[k] || 'N/A'}" a "${newContract[k] || 'N/A'}"`);
+          }
+        });
+        const changesStr = changes.length > 0 ? ` (Cambios: ${changes.join(', ')})` : '';
+        logMovement(
+          'Editar Contrato',
+          'Contrato',
+          contractNumber,
+          `Contrato ${contractNumber} actualizado.${changesStr}`
+        );
+      }
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const deleteContract = async (contractNumber) => {
+    try {
+      const response = await fetch(`/api/contracts/${encodeURIComponent(contractNumber)}`, {
+        method: 'DELETE'
+      });
+      if (!response.ok) throw new Error('Error al eliminar contrato en el servidor');
+      
+      const oldContract = contractsRaw.find(c => c.contractNumber === contractNumber);
+      const updatedContracts = contractsRaw.filter(c => c.contractNumber !== contractNumber);
+      const updatedVehicles = vehiclesRaw.map(v => 
+        v.contract === contractNumber 
+          ? { ...v, contract: 'No encontrado', entityId: 'No encontrado', empresa: 'No asociado', terminal: 'N/A' } 
+          : v
+      );
+      persistState(updatedContracts, updatedVehicles);
+      if (oldContract) {
+        logMovement(
+          'Eliminar Contrato',
+          'Contrato',
+          contractNumber,
+          `Contrato ${contractNumber} eliminado de la base de datos.`
+        );
+      }
+    } catch (err) {
+      alert(err.message);
     }
   };
 
   // CRUD Operations - COMPANIES (Cascading)
-  const updateCompany = (entityId, newName) => {
-    const oldCompany = contractsRaw.find(c => c.entityId === entityId)?.empresa || entityId;
-    const updatedContracts = contractsRaw.map(c => 
-      c.entityId === entityId ? { ...c, empresa: newName } : c
-    );
-    persistState(updatedContracts, vehiclesRaw);
-    logMovement(
-      'Editar Empresa',
-      'Empresa',
-      entityId,
-      `Empresa "${oldCompany}" (ID: ${entityId}) renombrada a "${newName}".`
-    );
-  };
-
-  const deleteCompany = (entityId) => {
-    const oldCompany = contractsRaw.find(c => c.entityId === entityId)?.empresa || entityId;
-    // Delete all contracts associated with this company
-    const updatedContracts = contractsRaw.filter(c => c.entityId !== entityId);
-    
-    // Clear vehicle association for deleted company
-    const updatedVehicles = vehiclesRaw.map(v => 
-      v.entityId === entityId 
-        ? { ...v, contract: 'No encontrado', entityId: 'No encontrado', empresa: 'No asociado', terminal: 'N/A' }
-        : v
-    );
-    persistState(updatedContracts, updatedVehicles);
-    logMovement(
-      'Eliminar Empresa',
-      'Empresa',
-      entityId,
-      `Empresa "${oldCompany}" (ID: ${entityId}) eliminada junto con sus contratos asociados.`
-    );
-  };
-
-  // CRUD Operations - CITIES (Cascading)
-  const updateCity = (oldName, newName) => {
-    const updatedContracts = contractsRaw.map(c => 
-      c.ciudad.toLowerCase() === oldName.toLowerCase() ? { ...c, ciudad: newName } : c
-    );
-    const updatedVehicles = vehiclesRaw.map(v => 
-      v.city.toLowerCase() === oldName.toLowerCase() ? { ...v, city: newName } : v
-    );
-    persistState(updatedContracts, updatedVehicles);
-    logMovement(
-      'Editar Ciudad',
-      'Ciudad',
-      oldName,
-      `Ciudad "${oldName}" renombrada a "${newName}".`
-    );
-  };
-
-  const deleteCity = (cityName) => {
-    const updatedContracts = contractsRaw.map(c => 
-      c.ciudad.toLowerCase() === cityName.toLowerCase() ? { ...c, ciudad: 'Sin Ciudad' } : c
-    );
-    const updatedVehicles = vehiclesRaw.map(v => 
-      v.city.toLowerCase() === cityName.toLowerCase() ? { ...v, city: 'Sin Ciudad' } : v
-    );
-    persistState(updatedContracts, updatedVehicles);
-    logMovement(
-      'Eliminar Ciudad',
-      'Ciudad',
-      cityName,
-      `Ciudad "${cityName}" eliminada del sistema. Contratos y vehículos asociados fueron marcados como 'Sin Ciudad'.`
-    );
-  };
-
-  // CRUD Operations - TERMINALS (Cascading)
-  const updateTerminal = (oldCode, newCode, cityName) => {
-    const updatedContracts = contractsRaw.map(c => 
-      (c.terminal === oldCode && c.ciudad.toLowerCase() === cityName.toLowerCase())
-        ? { ...c, terminal: newCode } 
-        : c
-    );
-    const updatedVehicles = vehiclesRaw.map(v => 
-      (v.terminal === oldCode && v.city.toLowerCase() === cityName.toLowerCase())
-        ? { ...v, terminal: newCode } 
-        : v
-    );
-    persistState(updatedContracts, updatedVehicles);
-    logMovement(
-      'Editar Terminal',
-      'Terminal',
-      oldCode,
-      `Terminal "${oldCode}" en "${cityName}" renombrada a "${newCode}".`
-    );
-  };
-
-  const deleteTerminal = (terminalCode, cityName) => {
-    // Delete all contracts linking this terminal
-    const updatedContracts = contractsRaw.filter(c => 
-      !(c.terminal === terminalCode && c.ciudad.toLowerCase() === cityName.toLowerCase())
-    );
-    // Unlink vehicle terminal code
-    const updatedVehicles = vehiclesRaw.map(v => 
-      (v.terminal === terminalCode && v.city.toLowerCase() === cityName.toLowerCase())
-        ? { ...v, terminal: 'N/A' } 
-        : v
-    );
-    persistState(updatedContracts, updatedVehicles);
-    logMovement(
-      'Eliminar Terminal',
-      'Terminal',
-      terminalCode,
-      `Terminal "${terminalCode}" en "${cityName}" eliminada del sistema.`
-    );
-  };
-
-  // CRUD Operations - USERS
-  const addUser = (newUser) => {
-    const updated = [...users, newUser];
-    setUsers(updated);
-    localStorage.setItem('fleet_users', JSON.stringify(updated));
-  };
-
-  const updateUser = (oldUsername, updatedUser) => {
-    const updated = users.map(u => u.username === oldUsername ? { ...u, ...updatedUser } : u);
-    setUsers(updated);
-    localStorage.setItem('fleet_users', JSON.stringify(updated));
-    // If the logged in user updated themselves, refresh current user state
-    if (currentUser && currentUser.username === oldUsername) {
-      const refreshed = { ...currentUser, ...updatedUser };
-      setCurrentUser(refreshed);
-      localStorage.setItem('fleet_session', JSON.stringify(refreshed));
+  const updateCompany = async (entityId, newName) => {
+    try {
+      const response = await fetch(`/api/companies/${encodeURIComponent(entityId)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newName })
+      });
+      if (!response.ok) throw new Error('Error al actualizar la empresa en el servidor');
+      
+      const oldCompany = contractsRaw.find(c => c.entityId === entityId)?.empresa || entityId;
+      const updatedContracts = contractsRaw.map(c => 
+        c.entityId === entityId ? { ...c, empresa: newName } : c
+      );
+      persistState(updatedContracts, vehiclesRaw);
+      logMovement(
+        'Editar Empresa',
+        'Empresa',
+        entityId,
+        `Empresa "${oldCompany}" (ID: ${entityId}) renombrada a "${newName}".`
+      );
+    } catch (err) {
+      alert(err.message);
     }
   };
 
-  const deleteUser = (usernameToDelete) => {
-    const updated = users.filter(u => u.username !== usernameToDelete);
-    setUsers(updated);
-    localStorage.setItem('fleet_users', JSON.stringify(updated));
+  const deleteCompany = async (entityId) => {
+    try {
+      const response = await fetch(`/api/companies/${encodeURIComponent(entityId)}`, {
+        method: 'DELETE'
+      });
+      if (!response.ok) throw new Error('Error al eliminar la empresa en el servidor');
+      
+      const oldCompany = contractsRaw.find(c => c.entityId === entityId)?.empresa || entityId;
+      const updatedContracts = contractsRaw.filter(c => c.entityId !== entityId);
+      const updatedVehicles = vehiclesRaw.map(v => 
+        v.entityId === entityId 
+          ? { ...v, contract: 'No encontrado', entityId: 'No encontrado', empresa: 'No asociado', terminal: 'N/A' }
+          : v
+      );
+      persistState(updatedContracts, updatedVehicles);
+      logMovement(
+        'Eliminar Empresa',
+        'Empresa',
+        entityId,
+        `Empresa "${oldCompany}" (ID: ${entityId}) eliminada junto con sus contratos asociados.`
+      );
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  // CRUD Operations - CITIES (Cascading)
+  const updateCity = async (oldName, newName) => {
+    try {
+      const response = await fetch(`/api/cities/${encodeURIComponent(oldName)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newName })
+      });
+      if (!response.ok) throw new Error('Error al actualizar la ciudad en el servidor');
+      
+      const updatedContracts = contractsRaw.map(c => 
+        c.ciudad.toLowerCase() === oldName.toLowerCase() ? { ...c, ciudad: newName } : c
+      );
+      const updatedVehicles = vehiclesRaw.map(v => 
+        v.city.toLowerCase() === oldName.toLowerCase() ? { ...v, city: newName } : v
+      );
+      persistState(updatedContracts, updatedVehicles);
+      logMovement(
+        'Editar Ciudad',
+        'Ciudad',
+        oldName,
+        `Ciudad "${oldName}" renombrada a "${newName}".`
+      );
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const deleteCity = async (cityName) => {
+    try {
+      const response = await fetch(`/api/cities/${encodeURIComponent(cityName)}`, {
+        method: 'DELETE'
+      });
+      if (!response.ok) throw new Error('Error al eliminar la ciudad en el servidor');
+      
+      const updatedContracts = contractsRaw.map(c => 
+        c.ciudad.toLowerCase() === cityName.toLowerCase() ? { ...c, ciudad: 'Sin Ciudad' } : c
+      );
+      const updatedVehicles = vehiclesRaw.map(v => 
+        v.city.toLowerCase() === cityName.toLowerCase() ? { ...v, city: 'Sin Ciudad' } : v
+      );
+      persistState(updatedContracts, updatedVehicles);
+      logMovement(
+        'Eliminar Ciudad',
+        'Ciudad',
+        cityName,
+        `Ciudad "${cityName}" eliminada del sistema. Contratos y vehículos asociados fueron marcados como 'Sin Ciudad'.`
+      );
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  // CRUD Operations - TERMINALS (Cascading)
+  const updateTerminal = async (oldCode, newCode, cityName) => {
+    try {
+      const response = await fetch(`/api/terminals/${encodeURIComponent(oldCode)}/${encodeURIComponent(cityName)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newCode })
+      });
+      if (!response.ok) throw new Error('Error al actualizar la terminal en el servidor');
+      
+      const updatedContracts = contractsRaw.map(c => 
+        (c.terminal === oldCode && c.ciudad.toLowerCase() === cityName.toLowerCase()) ? { ...c, terminal: newCode } : c
+      );
+      const updatedVehicles = vehiclesRaw.map(v => 
+        (v.terminal === oldCode && v.city.toLowerCase() === cityName.toLowerCase()) ? { ...v, terminal: newCode } : v
+      );
+      persistState(updatedContracts, updatedVehicles);
+      logMovement(
+        'Editar Terminal',
+        'Terminal',
+        oldCode,
+        `Terminal "${oldCode}" en "${cityName}" renombrada a "${newCode}".`
+      );
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const deleteTerminal = async (terminalCode, cityName) => {
+    try {
+      const response = await fetch(`/api/terminals/${encodeURIComponent(terminalCode)}/${encodeURIComponent(cityName)}`, {
+        method: 'DELETE'
+      });
+      if (!response.ok) throw new Error('Error al eliminar la terminal en el servidor');
+      
+      const updatedContracts = contractsRaw.filter(c => 
+        !(c.terminal === terminalCode && c.ciudad.toLowerCase() === cityName.toLowerCase())
+      );
+      const updatedVehicles = vehiclesRaw.map(v => 
+        (v.terminal === terminalCode && v.city.toLowerCase() === cityName.toLowerCase()) ? { ...v, terminal: 'N/A' } : v
+      );
+      persistState(updatedContracts, updatedVehicles);
+      logMovement(
+        'Eliminar Terminal',
+        'Terminal',
+        terminalCode,
+        `Terminal "${terminalCode}" en "${cityName}" eliminada del sistema.`
+      );
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  // CRUD Operations - USERS
+  const addUser = async (newUser) => {
+    try {
+      const response = await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newUser)
+      });
+      if (!response.ok) throw new Error('Error al crear usuario en el servidor');
+      const savedUser = await response.json();
+      const updated = [...users, savedUser];
+      setUsers(updated);
+      localStorage.setItem('fleet_users', JSON.stringify(updated));
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const updateUser = async (oldUsername, updatedUser) => {
+    try {
+      const response = await fetch(`/api/users/${encodeURIComponent(oldUsername)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedUser)
+      });
+      if (!response.ok) throw new Error('Error al actualizar usuario en el servidor');
+      const savedUser = await response.json();
+      const updated = users.map(u => u.username === oldUsername ? savedUser : u);
+      setUsers(updated);
+      localStorage.setItem('fleet_users', JSON.stringify(updated));
+      if (currentUser && currentUser.username === oldUsername) {
+        const refreshed = { ...currentUser, ...updatedUser };
+        setCurrentUser(refreshed);
+        localStorage.setItem('fleet_session', JSON.stringify(refreshed));
+      }
+    } catch (err) {
+      alert(err.message);
+    }
+  };
+
+  const deleteUser = async (usernameToDelete) => {
+    try {
+      const response = await fetch(`/api/users/${encodeURIComponent(usernameToDelete)}`, {
+        method: 'DELETE'
+      });
+      if (!response.ok) throw new Error('Error al eliminar usuario en el servidor');
+      const updated = users.filter(u => u.username !== usernameToDelete);
+      setUsers(updated);
+      localStorage.setItem('fleet_users', JSON.stringify(updated));
+    } catch (err) {
+      alert(err.message);
+    }
   };
 
   const renderTabContent = () => {
@@ -473,13 +608,19 @@ function App() {
           <HistorialTab
             movements={movements}
             permissions={permissions}
-            onClearHistory={() => {
+            onClearHistory={async () => {
               if (window.confirm('¿Está seguro de que desea vaciar todo el historial de auditoría? Esta acción no se puede deshacer.')) {
-                setMovements([]);
-                localStorage.setItem('fleet_movements', JSON.stringify([]));
-                setTimeout(() => {
-                  logMovement('Vaciar Historial', 'Historial', 'N/A', 'El historial de auditoría fue limpiado por el usuario.');
-                }, 100);
+                try {
+                  const response = await fetch('/api/movements/clear', { method: 'POST' });
+                  if (response.ok) {
+                    setMovements([]);
+                    setTimeout(() => {
+                      logMovement('Vaciar Historial', 'Historial', 'N/A', 'El historial de auditoría fue limpiado por el usuario.');
+                    }, 100);
+                  }
+                } catch (err) {
+                  alert('Error al vaciar el historial.');
+                }
               }
             }}
           />

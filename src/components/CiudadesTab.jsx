@@ -4,7 +4,7 @@ import { SidePanel } from './ui/SidePanel';
 import { Dialog } from './ui/Dialog';
 import { ExportButtons } from './ui/ExportButtons';
 import { exportTableToPDF, exportTableToExcel } from '../utils/exportUtils';
-import { Truck, Map, FileText, Edit, Trash2 } from 'lucide-react';
+import { Truck, FileText, Edit, Trash2 } from 'lucide-react';
 
 export function CiudadesTab({ data, permissions, onUpdateCity, onDeleteCity }) {
   const { ciudades, contratos, vehicles } = data;

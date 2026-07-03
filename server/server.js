@@ -150,7 +150,15 @@ async function initDB() {
     driver: sqlite3.Database
   });
 
+  // Enable WAL (Write-Ahead Logging) mode for better concurrent performance
+  await db.exec('PRAGMA journal_mode = WAL;');
+
   await db.exec(`
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS users (
       username TEXT PRIMARY KEY,
       password TEXT NOT NULL,
@@ -208,11 +216,10 @@ async function initDB() {
     console.log('Default users seeded.');
   }
 
-  // Seed contracts and vehicles from CSV if database is empty
-  const contractCount = await db.get('SELECT COUNT(*) as count FROM contracts');
-  const vehicleCount = await db.get('SELECT COUNT(*) as count FROM vehicles');
-  if (contractCount.count === 0 && vehicleCount.count === 0) {
-    console.log('Database tables are empty. Loading data from CSV...');
+  // Seed contracts and vehicles from CSV if database has not been seeded yet
+  const seedSetting = await db.get("SELECT value FROM settings WHERE key = 'seeded'");
+  if (!seedSetting) {
+    console.log('Database has not been seeded yet. Loading data from CSV...');
     try {
       const csvText = await fs.readFile(csvPath, 'utf8');
       const parsed = parseConsolidadoCSV(csvText);
@@ -234,6 +241,9 @@ async function initDB() {
           [v.vin, v.unitNo, v.make, v.year, v.bodyType, v.tag, v.city, v.contract, v.entityId, v.empresa, v.terminal, v.status]
         );
       }
+      
+      // Mark as seeded in the settings table
+      await db.run("INSERT INTO settings (key, value) VALUES ('seeded', 'true')");
       console.log(`Seeded ${parsed.contractsRaw.length} contracts and ${parsed.vehiclesRaw.length} vehicles from CSV.`);
     } catch (err) {
       console.error('Failed to read or parse CSV:', err);
@@ -337,7 +347,11 @@ app.put('/api/contracts/:contractNumber', async (req, res) => {
     const updated = await db.get('SELECT * FROM contracts WHERE contractNumber = ?', [contractNumber]);
     res.json(updated);
   } catch (err) {
-    await db.run('ROLLBACK');
+    try {
+      await db.run('ROLLBACK');
+    } catch {
+      // Ignore rollback errors to prevent overriding the main error
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -355,7 +369,11 @@ app.delete('/api/contracts/:contractNumber', async (req, res) => {
     await db.run('COMMIT');
     res.json({ message: `Contract ${contractNumber} deleted and associated vehicles unlinked.` });
   } catch (err) {
-    await db.run('ROLLBACK');
+    try {
+      await db.run('ROLLBACK');
+    } catch {
+      // Ignore rollback errors to prevent overriding the main error
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -371,7 +389,11 @@ app.put('/api/companies/:entityId', async (req, res) => {
     await db.run('COMMIT');
     res.json({ message: `Company entityId ${entityId} renamed to ${newName}.` });
   } catch (err) {
-    await db.run('ROLLBACK');
+    try {
+      await db.run('ROLLBACK');
+    } catch {
+      // Ignore rollback errors to prevent overriding the main error
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -400,7 +422,11 @@ app.delete('/api/companies/:entityId', async (req, res) => {
     await db.run('COMMIT');
     res.json({ message: `Company entityId ${entityId} and associated contracts/vehicles unlinked.` });
   } catch (err) {
-    await db.run('ROLLBACK');
+    try {
+      await db.run('ROLLBACK');
+    } catch {
+      // Ignore rollback errors to prevent overriding the main error
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -416,7 +442,11 @@ app.put('/api/cities/:name', async (req, res) => {
     await db.run('COMMIT');
     res.json({ message: `City "${oldName}" updated to "${newName}".` });
   } catch (err) {
-    await db.run('ROLLBACK');
+    try {
+      await db.run('ROLLBACK');
+    } catch {
+      // Ignore rollback errors to prevent overriding the main error
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -430,7 +460,11 @@ app.delete('/api/cities/:name', async (req, res) => {
     await db.run('COMMIT');
     res.json({ message: `City "${name}" unlinked.` });
   } catch (err) {
-    await db.run('ROLLBACK');
+    try {
+      await db.run('ROLLBACK');
+    } catch {
+      // Ignore rollback errors to prevent overriding the main error
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -452,7 +486,11 @@ app.put('/api/terminals/:oldCode/:cityName', async (req, res) => {
     await db.run('COMMIT');
     res.json({ message: `Terminal "${oldCode}" in "${cityName}" updated to "${newCode}".` });
   } catch (err) {
-    await db.run('ROLLBACK');
+    try {
+      await db.run('ROLLBACK');
+    } catch {
+      // Ignore rollback errors to prevent overriding the main error
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -472,7 +510,11 @@ app.delete('/api/terminals/:terminalCode/:cityName', async (req, res) => {
     await db.run('COMMIT');
     res.json({ message: `Terminal "${terminalCode}" in "${cityName}" deleted.` });
   } catch (err) {
-    await db.run('ROLLBACK');
+    try {
+      await db.run('ROLLBACK');
+    } catch {
+      // Ignore rollback errors to prevent overriding the main error
+    }
     res.status(500).json({ error: err.message });
   }
 });
@@ -556,9 +598,28 @@ app.get('*', (req, res, next) => {
 
 // Start Express App
 initDB().then(() => {
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`Backend server running on http://localhost:${PORT}`);
   });
+
+  const shutdown = async () => {
+    console.log('Shutting down server gracefully...');
+    server.close(async () => {
+      console.log('HTTP server closed.');
+      if (db) {
+        try {
+          await db.close();
+          console.log('Database connection closed.');
+        } catch (err) {
+          console.error('Error closing database:', err);
+        }
+      }
+      process.exit(0);
+    });
+  };
+
+  process.on('SIGINT', shutdown);
+  process.on('SIGTERM', shutdown);
 }).catch(err => {
   console.error('Failed to initialize database:', err);
 });

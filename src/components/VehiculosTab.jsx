@@ -21,7 +21,7 @@ import {
 } from 'lucide-react';
 
 export function VehiculosTab({ data, permissions, onAddVehicle, onUpdateVehicle, onDeleteVehicle, initialFilter = 'all', onResetFilter }) {
-  const { vehicles, contratos, ciudades, empresas } = data;
+  const { vehicles, contratos, ciudades } = data;
 
   // Filter vehicles based on active filter from dashboard
   const filteredVehicles = useMemo(() => {

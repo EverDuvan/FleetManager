@@ -33,7 +33,7 @@ export function DocumentViewer({ isOpen, onClose, docMeta, onLoad, onDownload })
           objectUrl = result.url;
           setPreviewUrl(result.url);
         }
-      } catch (e) {
+      } catch {
         setError('No se pudo cargar el archivo para previsualización.');
       } finally {
         setLoading(false);

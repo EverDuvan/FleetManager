@@ -89,7 +89,7 @@ export async function getDocumentsByVin(vin) {
 
     req.onsuccess = (e) => {
       // Devolver registros sin el blob para evitar serialización pesada
-      const docs = (e.target.result || []).map(({ data, ...meta }) => meta);
+      const docs = (e.target.result || []).map(({ data: _data, ...meta }) => meta);
       resolve(docs);
     };
     req.onerror = (e) => reject(e.target.error);
@@ -145,7 +145,7 @@ export async function getDocCountsByVin(vins) {
   const db  = await openDB();
   const map = new Map();
 
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const tx    = db.transaction(STORE, 'readonly');
     const store = tx.objectStore(STORE);
     const index = store.index('vin');

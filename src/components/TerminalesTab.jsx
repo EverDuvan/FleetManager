@@ -4,7 +4,7 @@ import { SidePanel } from './ui/SidePanel';
 import { Dialog } from './ui/Dialog';
 import { ExportButtons } from './ui/ExportButtons';
 import { exportTableToPDF, exportTableToExcel } from '../utils/exportUtils';
-import { Truck, MapPin, Building2, FileText, Activity, Edit, Trash2 } from 'lucide-react';
+import { Truck, Building2, FileText, Activity, Edit, Trash2 } from 'lucide-react';
 
 export function TerminalesTab({ data, permissions, onUpdateTerminal, onDeleteTerminal }) {
   const { terminales, vehicles } = data;

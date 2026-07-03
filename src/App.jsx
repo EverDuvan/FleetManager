@@ -9,7 +9,7 @@ import { VehiculosTab } from './components/VehiculosTab';
 import { UsuariosTab } from './components/UsuariosTab';
 import { AuthScreen } from './components/AuthScreen';
 import { HistorialTab } from './components/HistorialTab';
-import { parseConsolidadoCSV, deriveAggregates } from './utils/dataParser';
+import { deriveAggregates } from './utils/dataParser';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 
 const DEFAULT_USERS = [
@@ -618,7 +618,7 @@ function App() {
                       logMovement('Vaciar Historial', 'Historial', 'N/A', 'El historial de auditoría fue limpiado por el usuario.');
                     }, 100);
                   }
-                } catch (err) {
+                } catch {
                   alert('Error al vaciar el historial.');
                 }
               }

@@ -17,12 +17,14 @@ COPY public/ ./public/
 COPY index.html vite.config.js ./
 RUN npm run build
 
-# Copiar código fuente del backend
-COPY server/ ./server/
-
-# Instalar dependencias del backend
+# Instalar dependencias del backend (separado para aprovechar la caché de Docker)
+COPY server/package*.json ./server/
 WORKDIR /app/server
 RUN npm ci
+
+# Copiar el resto del código fuente del backend
+WORKDIR /app
+COPY server/ ./server/
 
 # Crear el directorio para montar el volumen persistente de SQLite
 RUN mkdir -p /data

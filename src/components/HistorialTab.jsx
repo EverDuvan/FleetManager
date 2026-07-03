@@ -4,10 +4,8 @@ import { SidePanel } from './ui/SidePanel';
 import { ExportButtons } from './ui/ExportButtons';
 import { exportTableToPDF, exportTableToExcel } from '../utils/exportUtils';
 import { 
-  History, 
   User, 
   Tag, 
-  Calendar, 
   Trash2, 
   Info,
   Clock
@@ -27,7 +25,7 @@ export function HistorialTab({ movements, permissions, onClearHistory }) {
         minute: '2-digit',
         second: '2-digit'
       });
-    } catch (e) {
+    } catch {
       return isoString;
     }
   };

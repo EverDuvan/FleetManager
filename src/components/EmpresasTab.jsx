@@ -4,7 +4,7 @@ import { SidePanel } from './ui/SidePanel';
 import { Dialog } from './ui/Dialog';
 import { ExportButtons } from './ui/ExportButtons';
 import { exportTableToPDF, exportTableToExcel } from '../utils/exportUtils';
-import { Building2, FileText, Truck, Edit, Trash2 } from 'lucide-react';
+import { FileText, Truck, Edit, Trash2 } from 'lucide-react';
 
 export function EmpresasTab({ data, permissions, onUpdateCompany, onDeleteCompany }) {
   const { empresas, contratos, vehicles } = data;

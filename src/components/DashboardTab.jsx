@@ -20,8 +20,6 @@ import {
   Tooltip, 
   Legend, 
   ResponsiveContainer, 
-  LineChart, 
-  Line, 
   PieChart, 
   Pie, 
   Cell, 

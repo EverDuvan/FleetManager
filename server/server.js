@@ -200,6 +200,16 @@ async function initDB() {
       description TEXT,
       changes TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS documents (
+      id TEXT PRIMARY KEY,
+      vin TEXT,
+      unitNo TEXT,
+      name TEXT,
+      type TEXT,
+      size INTEGER,
+      uploadedAt TEXT
+    );
   `);
 
   // Seed default users if empty
@@ -247,6 +257,56 @@ async function initDB() {
       console.log(`Seeded ${parsed.contractsRaw.length} contracts and ${parsed.vehiclesRaw.length} vehicles from CSV.`);
     } catch (err) {
       console.error('Failed to read or parse CSV:', err);
+    }
+  }
+
+  // Create uploads directory and seed documents if needed
+  const uploadsDir = path.join(__dirname, 'uploads');
+  await fs.mkdir(uploadsDir, { recursive: true });
+
+  const docCount = await db.get('SELECT COUNT(*) as count FROM documents');
+  if (docCount.count === 0) {
+    console.log('Seeding documents from registrations directory...');
+    const regsDir = path.join(__dirname, '../registrations');
+    try {
+      const dirExists = await fs.access(regsDir).then(() => true).catch(() => false);
+      if (dirExists) {
+        const files = await fs.readdir(regsDir);
+        let seededDocsCount = 0;
+        for (const file of files) {
+          if (file.endsWith('.pdf')) {
+            const unitNo = path.basename(file, '.pdf');
+            // Find vehicle by unitNo
+            const vehicle = await db.get('SELECT vin FROM vehicles WHERE unitNo = ?', [unitNo]);
+            if (vehicle) {
+              const vin = vehicle.vin;
+              const id = `${vin}::${file}`;
+              const safeFilename = `${vin}__${file.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+              const srcPath = path.join(regsDir, file);
+              const destPath = path.join(uploadsDir, safeFilename);
+
+              // Copy file
+              await fs.copyFile(srcPath, destPath);
+
+              // Get size
+              const stats = await fs.stat(destPath);
+
+              // Insert to documents table
+              await db.run(
+                `INSERT OR IGNORE INTO documents (id, vin, unitNo, name, type, size, uploadedAt)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [id, vin, unitNo, file, 'application/pdf', stats.size, new Date().toISOString()]
+              );
+              seededDocsCount++;
+            }
+          }
+        }
+        console.log(`Successfully seeded ${seededDocsCount} documents.`);
+      } else {
+        console.log('Registrations directory not found for seeding.');
+      }
+    } catch (err) {
+      console.error('Failed to seed documents:', err);
     }
   }
 }
@@ -579,6 +639,136 @@ app.post('/api/movements/clear', async (req, res) => {
   try {
     await db.run('DELETE FROM movements');
     res.json({ message: 'Audit history cleared.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// VEHICLE DOCUMENTS API
+const uploadsDir = path.join(__dirname, 'uploads');
+
+app.post('/api/documents/upload', express.raw({ type: 'application/octet-stream', limit: '20mb' }), async (req, res) => {
+  try {
+    const vin = req.headers['x-vin'];
+    const unitNo = req.headers['x-unit-no'];
+    const filename = decodeURIComponent(req.headers['x-filename'] || 'document.pdf');
+    const filetype = req.headers['x-filetype'] || 'application/pdf';
+    const size = parseInt(req.headers['x-size'] || '0', 10);
+
+    if (!vin || !filename) {
+      return res.status(400).json({ error: 'Missing required headers: x-vin and x-filename' });
+    }
+
+    const id = `${vin}::${filename}`;
+    const safeFilename = `${vin}__${filename.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+    const filePath = path.join(uploadsDir, safeFilename);
+
+    // Save binary file
+    await fs.writeFile(filePath, req.body);
+
+    // Save to database
+    await db.run(
+      `INSERT OR REPLACE INTO documents (id, vin, unitNo, name, type, size, uploadedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [id, vin, unitNo, filename, filetype, size, new Date().toISOString()]
+    );
+
+    res.status(201).json({ id, vin, unitNo, name: filename, type: filetype, size });
+  } catch (err) {
+    console.error('Upload document error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/documents/vin/:vin', async (req, res) => {
+  try {
+    const { vin } = req.params;
+    const docs = await db.all('SELECT id, vin, unitNo, name, type, size, uploadedAt FROM documents WHERE vin = ?', [vin]);
+    res.json(docs);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/documents/counts', async (req, res) => {
+  try {
+    const counts = await db.all('SELECT vin, COUNT(*) as count FROM documents GROUP BY vin');
+    const map = {};
+    counts.forEach(row => {
+      map[row.vin] = row.count;
+    });
+    res.json(map);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/documents/file/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const doc = await db.get('SELECT * FROM documents WHERE id = ?', [id]);
+    if (!doc) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+    const safeFilename = `${doc.vin}__${doc.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+    const filePath = path.join(uploadsDir, safeFilename);
+    res.setHeader('Content-Type', doc.type || 'application/pdf');
+    res.sendFile(filePath);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/documents/meta/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const doc = await db.get('SELECT id, vin, unitNo, name, type, size, uploadedAt FROM documents WHERE id = ?', [id]);
+    if (!doc) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+    res.json(doc);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/documents/download/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const doc = await db.get('SELECT * FROM documents WHERE id = ?', [id]);
+    if (!doc) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+    const safeFilename = `${doc.vin}__${doc.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+    const filePath = path.join(uploadsDir, safeFilename);
+    
+    const ext = doc.name.includes('.') ? doc.name.split('.').pop().toLowerCase() : 'pdf';
+    const downloadName = `${doc.unitNo}_registration.${ext}`;
+
+    res.download(filePath, downloadName);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/documents/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const doc = await db.get('SELECT * FROM documents WHERE id = ?', [id]);
+    if (!doc) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+    const safeFilename = `${doc.vin}__${doc.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+    const filePath = path.join(uploadsDir, safeFilename);
+
+    try {
+      await fs.unlink(filePath);
+    } catch (e) {
+      console.warn('File not found on disk during deletion:', filePath);
+    }
+
+    await db.run('DELETE FROM documents WHERE id = ?', [id]);
+    res.json({ message: 'Document deleted successfully' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

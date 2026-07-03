@@ -1,199 +1,119 @@
 /**
  * docStorage.js
- * CRUD wrapper sobre IndexedDB para almacenar documentos
- * de registro vehicular asociados a cada vehículo (por VIN).
- *
- * Esquema:
- *   id         : string  — `${vin}::${filename}` (clave primaria)
- *   vin        : string  — VIN del vehículo asociado
- *   unitNo     : string  — Número de unidad (para nombrar descargas)
- *   name       : string  — Nombre original del archivo
- *   type       : string  — MIME type (application/pdf, image/jpeg, etc.)
- *   size       : number  — Tamaño en bytes
- *   uploadedAt : string  — ISO timestamp
- *   data       : Blob    — Contenido binario del archivo
+ * CRUD wrapper que consume APIs del backend para almacenar y gestionar
+ * documentos de registro vehicular asociados a cada vehículo (por VIN).
  */
 
-const DB_NAME    = 'fleetmanager_docs';
-const DB_VERSION = 1;
-const STORE      = 'vehicle_documents';
-
-// ── Abrir / crear la base de datos ───────────────────────────────────────────
-function openDB() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-
-    req.onupgradeneeded = (e) => {
-      const db = e.target.result;
-      if (!db.objectStoreNames.contains(STORE)) {
-        const store = db.createObjectStore(STORE, { keyPath: 'id' });
-        // Índice para buscar todos los documentos de un VIN
-        store.createIndex('vin', 'vin', { unique: false });
-      }
-    };
-
-    req.onsuccess  = (e) => resolve(e.target.result);
-    req.onerror    = (e) => reject(e.target.error);
-  });
-}
-
-// ── Helpers internos ──────────────────────────────────────────────────────────
-function makeId(vin, filename) {
-  return `${vin}::${filename}`;
-}
-
-// ── API pública ───────────────────────────────────────────────────────────────
-
 /**
- * Guarda un archivo asociado a un vehículo.
+ * Guarda un archivo asociado a un vehículo en el servidor.
  * @param {string} vin
  * @param {string} unitNo
  * @param {File}   file    — objeto File del input
  * @returns {Promise<Object>} — el registro guardado (sin el blob data)
  */
 export async function saveDocument(vin, unitNo, file) {
-  const db = await openDB();
-  const record = {
-    id:         makeId(vin, file.name),
-    vin,
-    unitNo,
-    name:       file.name,
-    type:       file.type,
-    size:       file.size,
-    uploadedAt: new Date().toISOString(),
-    data:       file,           // IndexedDB almacena Blobs nativamente
-  };
-
-  return new Promise((resolve, reject) => {
-    const tx    = db.transaction(STORE, 'readwrite');
-    const store = tx.objectStore(STORE);
-    const req   = store.put(record);
-    req.onsuccess = () => resolve({ ...record, data: undefined });
-    req.onerror   = (e) => reject(e.target.error);
+  const response = await fetch('/api/documents/upload', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/octet-stream',
+      'x-vin': vin,
+      'x-unit-no': unitNo,
+      'x-filename': encodeURIComponent(file.name),
+      'x-filetype': file.type,
+      'x-size': file.size.toString()
+    },
+    body: file
   });
+
+  if (!response.ok) {
+    throw new Error('Error al subir el documento al servidor');
+  }
+
+  return await response.json();
 }
 
 /**
- * Obtiene los metadatos de todos los documentos de un vehículo (sin el blob).
+ * Obtiene los metadatos de todos los documentos de un vehículo de la base de datos.
  * @param {string} vin
  * @returns {Promise<Array>}
  */
 export async function getDocumentsByVin(vin) {
-  const db = await openDB();
-
-  return new Promise((resolve, reject) => {
-    const tx      = db.transaction(STORE, 'readonly');
-    const store   = tx.objectStore(STORE);
-    const index   = store.index('vin');
-    const req     = index.getAll(vin);
-
-    req.onsuccess = (e) => {
-      // Devolver registros sin el blob para evitar serialización pesada
-      const docs = (e.target.result || []).map(({ data: _data, ...meta }) => meta);
-      resolve(docs);
-    };
-    req.onerror = (e) => reject(e.target.error);
-  });
+  const response = await fetch(`/api/documents/vin/${encodeURIComponent(vin)}`);
+  if (!response.ok) {
+    throw new Error('Error al obtener documentos del servidor');
+  }
+  return await response.json();
 }
 
 /**
- * Carga el Blob de un documento específico para previsualización/descarga.
+ * Carga el Blob de un documento específico y su registro desde el servidor.
  * @param {string} id  — el id compuesto `vin::filename`
  * @returns {Promise<{blob: Blob, record: Object}>}
  */
 export async function loadDocumentBlob(id) {
-  const db = await openDB();
+  // Cargar el archivo como blob
+  const fileRes = await fetch(`/api/documents/file/${encodeURIComponent(id)}`);
+  if (!fileRes.ok) {
+    throw new Error('Error al cargar el archivo desde el servidor');
+  }
+  const blob = await fileRes.blob();
 
-  return new Promise((resolve, reject) => {
-    const tx    = db.transaction(STORE, 'readonly');
-    const store = tx.objectStore(STORE);
-    const req   = store.get(id);
+  // Cargar los metadatos del archivo
+  const metaRes = await fetch(`/api/documents/meta/${encodeURIComponent(id)}`);
+  if (!metaRes.ok) {
+    throw new Error('Error al cargar los metadatos del documento');
+  }
+  const record = await metaRes.json();
 
-    req.onsuccess = (e) => {
-      const record = e.target.result;
-      if (!record) return reject(new Error('Documento no encontrado'));
-      resolve({ blob: record.data, record: { ...record, data: undefined } });
-    };
-    req.onerror = (e) => reject(e.target.error);
-  });
+  return { blob, record };
 }
 
 /**
- * Elimina un documento de la base de datos.
+ * Elimina un documento en el servidor.
  * @param {string} id
  * @returns {Promise<void>}
  */
 export async function deleteDocument(id) {
-  const db = await openDB();
-
-  return new Promise((resolve, reject) => {
-    const tx    = db.transaction(STORE, 'readwrite');
-    const store = tx.objectStore(STORE);
-    const req   = store.delete(id);
-    req.onsuccess = () => resolve();
-    req.onerror   = (e) => reject(e.target.error);
+  const response = await fetch(`/api/documents/${encodeURIComponent(id)}`, {
+    method: 'DELETE'
   });
+  if (!response.ok) {
+    throw new Error('Error al eliminar el documento del servidor');
+  }
 }
 
 /**
- * Retorna estadísticas de documentos para un array de VINs.
- * Útil para el dashboard (cuántos vehículos tienen documentos).
+ * Retorna estadísticas de documentos para un array de VINs consultando al servidor.
  * @param {string[]} vins
  * @returns {Promise<Map<string, number>>}  vin → cantidad de docs
  */
 export async function getDocCountsByVin(vins) {
-  const db  = await openDB();
+  const response = await fetch('/api/documents/counts');
+  if (!response.ok) {
+    throw new Error('Error al obtener los conteos de documentos');
+  }
+  const countsMap = await response.json();
   const map = new Map();
-
-  return new Promise((resolve) => {
-    const tx    = db.transaction(STORE, 'readonly');
-    const store = tx.objectStore(STORE);
-    const index = store.index('vin');
-
-    const promises = vins.map(
-      (vin) =>
-        new Promise((res) => {
-          const req = index.count(vin);
-          req.onsuccess = (e) => res({ vin, count: e.target.result });
-          req.onerror   = () => res({ vin, count: 0 });
-        })
-    );
-
-    Promise.all(promises).then((results) => {
-      results.forEach(({ vin, count }) => map.set(vin, count));
-      resolve(map);
-    });
+  vins.forEach((vin) => {
+    map.set(vin, countsMap[vin] || 0);
   });
+  return map;
 }
 
-// ── Utilidades de descarga ────────────────────────────────────────────────────
-
 /**
- * Descarga un documento con el nombre basado en el número de unidad.
+ * Descarga un documento redirigiendo la petición al endpoint de descarga del backend.
  * @param {string} id       — id del documento
- * @param {string} unitNo   — número de unidad del vehículo
+ * @param {string} unitNo   — número de unidad del vehículo (para nombrar descargas)
  */
 export async function downloadDocument(id, unitNo) {
-  const { blob, record } = await loadDocumentBlob(id);
-
-  // Extraer extensión del archivo original (pdf, jpg, png, etc.)
-  const ext = record.name.includes('.')
-    ? record.name.split('.').pop().toLowerCase()
-    : 'pdf';
-
-  // Nombre final: 13957_registration.pdf
-  const downloadName = `${unitNo}_registration.${ext}`;
-
-  const url  = URL.createObjectURL(blob);
+  // Creamos un elemento <a> oculto y disparamos el clic para descargar desde el endpoint del backend.
   const link = document.createElement('a');
-  link.href     = url;
-  link.download = downloadName;
+  link.href = `/api/documents/download/${encodeURIComponent(id)}`;
+  link.download = '';
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-
 
 /**
  * Crea una URL temporal de objeto para previsualizar un archivo en el navegador.

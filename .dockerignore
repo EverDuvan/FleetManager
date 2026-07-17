@@ -1,17 +1,33 @@
 node_modules
 dist
 dist-ssr
+
+# Backend – excluir node_modules y archivos de DB locales
 server/node_modules
 server/database.sqlite
+server/database.sqlite-shm
+server/database.sqlite-wal
 server/database.sqlite-journal
-database.sqlite
+
+# Uploads locales (se manejan con volúmenes en producción)
+server/uploads
+
+# Git y editores
 .git
 .github
 .vscode
 .idea
+
+# Docker (no necesitamos el propio Dockerfile dentro de la imagen)
 .dockerignore
-Dockerfile
-.env*
+docker-compose.yml
+
+# Entorno – NUNCA meter .env en la imagen
+.env
+.env.*
+!.env.example
+
+# Logs
 *.log
 npm-debug.log*
 yarn-debug.log*

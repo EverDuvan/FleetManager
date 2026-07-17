@@ -1,0 +1,32 @@
+version: "3.9"
+
+services:
+  fleetmanager:
+    image: fleetmanager:latest
+    # Alternativamente, para build directo en el servidor:
+    # build: .
+    container_name: fleetmanager
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - PORT=8080
+      - NODE_ENV=production
+      - DATABASE_PATH=/data/database.sqlite
+    volumes:
+      # Volumen persistente para la base de datos SQLite
+      - fleetmanager_data:/data
+      # Volumen persistente para los documentos subidos
+      - fleetmanager_uploads:/app/server/uploads
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/data"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  fleetmanager_data:
+    driver: local
+  fleetmanager_uploads:
+    driver: local

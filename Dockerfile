@@ -1,43 +1,71 @@
-FROM node:20-slim
-
-# Instalar Python, make y g++ necesarios para compilar node-sqlite3 si es necesario
-RUN apt-get update && apt-get install -y python3 make g++ && rm -rf /var/lib/apt/lists/*
+# ============================================================
+# Stage 1: Build frontend
+# ============================================================
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copiar archivos de dependencias del frontend
-COPY package*.json ./
-
 # Instalar dependencias del frontend
+COPY package*.json ./
 RUN npm ci
 
-# Copiar código fuente del frontend y compilar
+# Copiar fuentes y compilar
 COPY src/ ./src/
 COPY public/ ./public/
 COPY index.html vite.config.js ./
+
+# Asegurar que el CSV de seed esté donde el servidor lo espera
+# El archivo fuente está en la raíz, el servidor lo busca en public/data/
+RUN mkdir -p public/data
+COPY "schB - Consolidado.csv" ./public/data/
+
 RUN npm run build
 
-# Instalar dependencias del backend (separado para aprovechar la caché de Docker)
+# ============================================================
+# Stage 2: Production image (solo backend + dist compilado)
+# ============================================================
+FROM node:20-alpine AS production
+
+# Instalar dependencias nativas para sqlite3 (python3, make, g++)
+RUN apk add --no-cache python3 make g++
+
+WORKDIR /app
+
+# Copiar e instalar dependencias del backend
 COPY server/package*.json ./server/
-WORKDIR /app/server
-RUN npm ci
+RUN cd server && npm ci --omit=dev
 
-# Copiar el resto del código fuente del backend
-WORKDIR /app
-COPY server/ ./server/
+# Copiar código del backend
+COPY server/server.js ./server/
 
-# Crear el directorio para montar el volumen persistente de SQLite
-RUN mkdir -p /data
+# Copiar el CSV de seed para que esté disponible en el contenedor
+RUN mkdir -p public/data
+COPY "schB - Consolidado.csv" ./public/data/
 
-# Volver a la raíz del proyecto
-WORKDIR /app
+# Copiar el frontend compilado desde la etapa anterior
+COPY --from=builder /app/dist ./dist
 
-# Configurar variables de entorno por defecto
-ENV PORT=8080
-ENV NODE_ENV=production
-ENV DATABASE_PATH=/data/database.sqlite
+# Crear usuario no-root por seguridad
+RUN addgroup -S fleetapp && adduser -S fleetapp -G fleetapp
+
+# Crear directorios con permisos correctos ANTES de cambiar de usuario
+# Los volúmenes Docker se montan sobre estos directorios en runtime;
+# el modo 777 asegura que el usuario no-root pueda escribir en ellos.
+RUN mkdir -p /data /app/server/uploads \
+    && chmod 777 /data /app/server/uploads \
+    && chown -R fleetapp:fleetapp /app
+
+USER fleetapp
+
+# Variables de entorno por defecto
+ENV PORT=8080 \
+    NODE_ENV=production \
+    DATABASE_PATH=/data/database.sqlite
 
 EXPOSE 8080
 
-# Ejecutar el servidor unificado
+# Healthcheck: verifica que el servidor responde
+HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+    CMD wget -qO- http://localhost:8080/api/data > /dev/null || exit 1
+
 CMD ["node", "server/server.js"]

@@ -38,9 +38,10 @@ RUN cd server && npm ci --omit=dev
 # Copiar código del backend
 COPY server/server.js ./server/
 
-# Copiar el CSV de seed para que esté disponible en el contenedor
+# Copiar el CSV de seed y las registraciones para que estén disponibles en el contenedor
 RUN mkdir -p public/data
 COPY ["schB - Consolidado.csv", "./public/data/"]
+COPY registrations/ ./registrations/
 
 # Copiar el frontend compilado desde la etapa anterior
 COPY --from=builder /app/dist ./dist

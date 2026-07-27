@@ -9,7 +9,8 @@
     "server": "node server/server.js",
     "build": "vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "upload-docs": "node scripts/bulkUploadDocs.js"
   },
   "dependencies": {
     "jspdf": "^4.2.1",

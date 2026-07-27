@@ -17,7 +17,7 @@ COPY index.html vite.config.js ./
 # Asegurar que el CSV de seed esté donde el servidor lo espera
 # El archivo fuente está en la raíz, el servidor lo busca en public/data/
 RUN mkdir -p public/data
-COPY "schB - Consolidado.csv" ./public/data/
+COPY ["schB - Consolidado.csv", "./public/data/"]
 
 RUN npm run build
 
@@ -40,7 +40,7 @@ COPY server/server.js ./server/
 
 # Copiar el CSV de seed para que esté disponible en el contenedor
 RUN mkdir -p public/data
-COPY "schB - Consolidado.csv" ./public/data/
+COPY ["schB - Consolidado.csv", "./public/data/"]
 
 # Copiar el frontend compilado desde la etapa anterior
 COPY --from=builder /app/dist ./dist

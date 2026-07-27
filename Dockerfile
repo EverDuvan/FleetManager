@@ -51,8 +51,8 @@ RUN addgroup -S fleetapp && adduser -S fleetapp -G fleetapp
 # Crear directorios con permisos correctos ANTES de cambiar de usuario
 # Los volúmenes Docker se montan sobre estos directorios en runtime;
 # el modo 777 asegura que el usuario no-root pueda escribir en ellos.
-RUN mkdir -p /data /app/server/uploads \
-    && chmod 777 /data /app/server/uploads \
+RUN mkdir -p /data /data/uploads /app/server/uploads \
+    && chmod -R 777 /data /app/server/uploads \
     && chown -R fleetapp:fleetapp /app
 
 USER fleetapp
@@ -60,7 +60,8 @@ USER fleetapp
 # Variables de entorno por defecto
 ENV PORT=8080 \
     NODE_ENV=production \
-    DATABASE_PATH=/data/database.sqlite
+    DATABASE_PATH=/data/database.sqlite \
+    UPLOADS_PATH=/data/uploads
 
 EXPOSE 8080
 

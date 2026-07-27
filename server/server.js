@@ -645,7 +645,7 @@ app.post('/api/movements/clear', async (req, res) => {
 });
 
 // VEHICLE DOCUMENTS API
-const uploadsDir = path.join(__dirname, 'uploads');
+const uploadsDir = process.env.UPLOADS_PATH || path.join(__dirname, 'uploads');
 
 app.post('/api/documents/upload', express.raw({ type: 'application/octet-stream', limit: '20mb' }), async (req, res) => {
   try {
@@ -659,6 +659,7 @@ app.post('/api/documents/upload', express.raw({ type: 'application/octet-stream'
       return res.status(400).json({ error: 'Missing required headers: x-vin and x-filename' });
     }
 
+    await fs.mkdir(uploadsDir, { recursive: true });
     const id = `${vin}::${filename}`;
     const safeFilename = `${vin}__${filename.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
     const filePath = path.join(uploadsDir, safeFilename);

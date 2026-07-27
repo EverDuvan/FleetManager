@@ -261,7 +261,7 @@ async function initDB() {
   }
 
   // Create uploads directory and seed documents if needed
-  const uploadsDir = path.join(__dirname, 'uploads');
+  const uploadsDir = process.env.UPLOADS_PATH || path.join(__dirname, 'uploads');
   await fs.mkdir(uploadsDir, { recursive: true });
 
   const docCount = await db.get('SELECT COUNT(*) as count FROM documents');

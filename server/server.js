@@ -326,6 +326,68 @@ app.get('/api/data', async (req, res) => {
   }
 });
 
+// EXPORT ALL DATA (for sync from production to local)
+app.get('/api/export', async (req, res) => {
+  try {
+    const contracts = await db.all('SELECT * FROM contracts');
+    const vehicles = await db.all('SELECT * FROM vehicles');
+    const movements = await db.all('SELECT * FROM movements ORDER BY timestamp DESC');
+    const documents = await db.all('SELECT * FROM documents');
+    res.json({ contracts, vehicles, movements, documents, exportedAt: new Date().toISOString() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// IMPORT DATA (upsert from export JSON — used to sync production data to local)
+app.post('/api/import', async (req, res) => {
+  const { contracts = [], vehicles = [], movements = [], documents = [] } = req.body;
+  try {
+    await db.run('BEGIN TRANSACTION');
+
+    for (const c of contracts) {
+      await db.run(
+        `INSERT OR REPLACE INTO contracts (contractNumber, terminal, ciudad, entityId, empresa, cantidad, contratoViejo)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [c.contractNumber, c.terminal, c.ciudad, c.entityId, c.empresa, c.cantidad, c.contratoViejo]
+      );
+    }
+
+    for (const v of vehicles) {
+      await db.run(
+        `INSERT OR REPLACE INTO vehicles (vin, unitNo, make, year, bodyType, tag, city, contract, entityId, empresa, terminal, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [v.vin, v.unitNo, v.make, v.year, v.bodyType, v.tag, v.city, v.contract, v.entityId, v.empresa, v.terminal, v.status]
+      );
+    }
+
+    for (const m of movements) {
+      await db.run(
+        `INSERT OR IGNORE INTO movements (id, timestamp, user, action, entityType, entityId, description, changes)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [m.id, m.timestamp, m.user, m.action, m.entityType, m.entityId, m.description, m.changes]
+      );
+    }
+
+    for (const d of documents) {
+      await db.run(
+        `INSERT OR IGNORE INTO documents (id, vin, unitNo, name, type, size, uploadedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [d.id, d.vin, d.unitNo, d.name, d.type, d.size, d.uploadedAt]
+      );
+    }
+
+    await db.run('COMMIT');
+    res.json({
+      message: 'Import successful',
+      imported: { contracts: contracts.length, vehicles: vehicles.length, movements: movements.length, documents: documents.length }
+    });
+  } catch (err) {
+    try { await db.run('ROLLBACK'); } catch { /* ignore */ }
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // VEHICLES CRUD
 app.post('/api/vehicles', async (req, res) => {
   const { vin, unitNo, make, year, bodyType, tag, city, contract, entityId, empresa, terminal, status } = req.body;

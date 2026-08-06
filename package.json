@@ -10,7 +10,8 @@
     "build": "vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "upload-docs": "node scripts/bulkUploadDocs.js"
+    "upload-docs": "node scripts/bulkUploadDocs.js",
+    "sync": "node scripts/syncFromProduction.js"
   },
   "dependencies": {
     "jspdf": "^4.2.1",

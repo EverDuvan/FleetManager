@@ -11,7 +11,8 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "upload-docs": "node scripts/bulkUploadDocs.js",
-    "sync": "node scripts/syncFromProduction.js"
+    "sync": "node scripts/syncFromProduction.js",
+    "push-data": "node scripts/syncToProduction.js"
   },
   "dependencies": {
     "jspdf": "^4.2.1",

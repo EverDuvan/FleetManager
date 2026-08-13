@@ -22,3 +22,15 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Databases & local uploads (Isolation to protect production data on Railway)
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+server/database.sqlite*
+server/uploads/*
+!server/uploads/.gitkeep
+.env
+.env.local
+
